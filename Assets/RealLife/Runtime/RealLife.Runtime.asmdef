@@ -1,0 +1,5 @@
+{
+  "name": "RealLife.Runtime",
+  "rootNamespace": "RealLife.Runtime",
+  "references": ["RealLife.Simulation", "Unity.InputSystem"]
+}

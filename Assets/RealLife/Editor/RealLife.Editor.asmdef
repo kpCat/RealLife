@@ -1,0 +1,11 @@
+{
+  "name": "RealLife.Editor",
+  "rootNamespace": "RealLife.Editor",
+  "references": [
+    "RealLife.Simulation",
+    "RealLife.Runtime",
+    "Unity.RenderPipelines.Core.Runtime",
+    "Unity.RenderPipelines.Universal.Runtime"
+  ],
+  "includePlatforms": ["Editor"]
+}

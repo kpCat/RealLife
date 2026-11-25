@@ -1,0 +1,7 @@
+{
+  "name": "RealLife.Tests",
+  "rootNamespace": "RealLife.Tests",
+  "references": ["RealLife.Simulation"],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"]
+}

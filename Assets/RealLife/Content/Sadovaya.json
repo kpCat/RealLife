@@ -1,0 +1,47 @@
+{
+  "Id": "reallife:district.sadovaya",
+  "Title": "Двор на Садовой",
+  "Revision": 1,
+  "Latitude": 47.04,
+  "Longitude": 28.86,
+  "Height": 92,
+  "Bounds": { "MinX": -14, "MinZ": -13, "MaxX": 14, "MaxZ": 18 },
+  "Spawn": { "X": 0, "Y": 0.11, "Z": -5.6 },
+  "Building": { "MinX": -4.6, "MinZ": 7, "MaxX": 4.6, "MaxZ": 14.8 },
+  "Door": {
+    "Id": "reallife:district.sadovaya.workshop.door",
+    "Hinge": { "X": -0.66, "Y": 0, "Z": 7 },
+    "Width": 1.32,
+    "Height": 2.18
+  },
+  "Item": {
+    "Id": "reallife:district.sadovaya.workshop.lantern",
+    "DefinitionId": "reallife:item.workshop_lantern",
+    "Name": "Фонарь",
+    "Home": { "X": 0, "Y": 1.02, "Z": 12.15 }
+  },
+  "Surfaces": [
+    { "Kind": 1, "Area": { "MinX": -14, "MinZ": -12.6, "MaxX": 14, "MaxZ": -7.4 } },
+    { "Kind": 2, "Area": { "MinX": -14, "MinZ": -7.4, "MaxX": 14, "MaxZ": -5.0 } },
+    { "Kind": 3, "Area": { "MinX": -1.65, "MinZ": -5.0, "MaxX": 1.65, "MaxZ": 7.02 } },
+    { "Kind": 3, "Area": { "MinX": -3.65, "MinZ": 5.55, "MaxX": -1.65, "MaxZ": 7.02 } },
+    { "Kind": 4, "Area": { "MinX": -11.5, "MinZ": 1.0, "MaxX": -5.0, "MaxZ": 9.0 } },
+    { "Kind": 4, "Area": { "MinX": 6.0, "MinZ": 0.5, "MaxX": 11.2, "MaxZ": 13.0 } }
+  ],
+  "Props": [
+    { "Kind": 1, "Position": { "X": -6.9, "Y": 0.0, "Z": 2.1 }, "Yaw": 18 },
+    { "Kind": 1, "Position": { "X": 8.7, "Y": 0.0, "Z": 4.9 }, "Yaw": -46 },
+    { "Kind": 1, "Position": { "X": -10.1, "Y": 0.0, "Z": 8.1 }, "Yaw": 121 },
+    { "Kind": 1, "Position": { "X": 9.55, "Y": 0.0, "Z": 12.2 }, "Yaw": 38 },
+    { "Kind": 2, "Position": { "X": 3.62, "Y": 0.0, "Z": 3.9 }, "Yaw": 14 },
+    { "Kind": 2, "Position": { "X": -4.12, "Y": 0.0, "Z": 1.78 }, "Yaw": 93 },
+    { "Kind": 3, "Position": { "X": -4.65, "Y": 0.0, "Z": 4.4 }, "Yaw": 89 },
+    { "Kind": 3, "Position": { "X": 5.85, "Y": 0.0, "Z": 9.5 }, "Yaw": -90 },
+    { "Kind": 4, "Position": { "X": 0, "Y": 0.02, "Z": 12.39 }, "Yaw": 0 },
+    { "Kind": 5, "Position": { "X": -3.97, "Y": 0.02, "Z": 12.9 }, "Yaw": 90 },
+    { "Kind": 6, "Position": { "X": 3.68, "Y": 0.02, "Z": 13.65 }, "Yaw": 9 },
+    { "Kind": 6, "Position": { "X": 3.47, "Y": 0.02, "Z": 12.82 }, "Yaw": -11 },
+    { "Kind": 7, "Position": { "X": 4.6, "Y": 0.1, "Z": -5.5 }, "Yaw": 176 },
+    { "Kind": 7, "Position": { "X": -9.8, "Y": 0.1, "Z": -5.5 }, "Yaw": 168 }
+  ]
+}

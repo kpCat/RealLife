@@ -1,0 +1,80 @@
+.location, .clock, .inventory, .controls, .prompt, .notice {
+    color: rgb(244, 241, 230);
+    background-color: rgba(24, 31, 28, 0.82);
+    padding: 8px 13px;
+    margin: 0;
+    font-size: 15px;
+}
+
+.location, .clock, .inventory, .controls, .crosshair, .context, .pause {
+    position: absolute;
+}
+
+.location {
+    top: 22px;
+    left: 24px;
+    border-left-width: 3px;
+    border-left-color: rgb(218, 173, 96);
+    font-size: 21px;
+    -unity-font-style: bold;
+}
+
+.clock { top: 22px; right: 24px; }
+.inventory { bottom: 23px; left: 24px; }
+.controls { bottom: 23px; right: 24px; color: rgb(226, 225, 212); font-size: 13px; }
+
+.crosshair {
+    left: 50%;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    margin-left: -3px;
+    margin-top: -3px;
+    border-width: 1px;
+    border-color: rgb(42, 47, 35);
+    border-radius: 4px;
+    background-color: rgb(246, 236, 204);
+}
+
+.context { bottom: 15%; left: 0; right: 0; align-items: center; }
+.prompt { -unity-font-style: bold; }
+.notice { margin-top: 4px; color: rgb(252, 218, 157); }
+.hidden { display: none; }
+
+.pause {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(18, 23, 20, 0.7);
+}
+
+.pause-menu {
+    width: 280px;
+    background-color: rgb(35, 44, 38);
+    padding: 20px;
+    border-top-width: 3px;
+    border-top-color: rgb(218, 173, 96);
+}
+
+.pause-title {
+    color: rgb(244, 241, 230);
+    font-size: 23px;
+    margin-bottom: 12px;
+    -unity-font-style: bold;
+}
+
+.pause-menu Button {
+    background-color: rgb(59, 72, 61);
+    color: rgb(244, 241, 230);
+    font-size: 16px;
+    min-height: 35px;
+    margin: 3px 0;
+    border-width: 0;
+}
+
+.pause-menu Button:hover, .pause-menu Button:focus {
+    background-color: rgb(80, 98, 80);
+}

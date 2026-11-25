@@ -1,10 +1,12 @@
 # Технологический стек и бесплатные зависимости
 
-Исследования от 25.11.2026 рекомендуют Unity 6.3 LTS и URP. При фактическом начале Codex выбирает стабильный патч этой ветки после проверки наличия и совместимости, фиксирует ProjectVersion.txt, manifest.json и packages-lock.json. Не обновляет редактор в середине задачи. Условия Unity Personal проверяются при установке. Исследования не являются испытанием пакетов на нашей машине.
+В REALLIFE-001 зафиксированы Unity `6000.3.29f1` (`96d2fe17529c`), URP `17.3.0`, Input System `1.20.1` и Unity Test Framework `1.6.0`. Windows Player собирается для x64 с Mono и Direct3D 11. Разрешённые зависимости закреплены в `Packages/manifest.json` и `Packages/packages-lock.json`.
+
+URP, Input System и Test Framework поставляются Unity под [Unity Companion License](https://unity.com/legal/licenses/unity-companion-license). Сцена, геометрия и материалы сделаны для проекта. При запуске игра использует штатный шрифт Unity.
 
 | Этап | Компонент | Назначение |
 |---|---|---|
-| Начало | Unity 6.3 LTS, URP, C#, Windows x64 (Mono для быстрых итераций) | Основная платформа; конкретный патч и пакеты зафиксировать |
+| Начало | Unity 6.3 LTS, URP, C#, Windows x64 (Mono) | Основная платформа первой сборки |
 | Начало | Input System, UI Toolkit, штатный 3D, Animation, Audio | Управление, интерфейс, представление |
 | Начало | Unity Test Framework, Git, PowerShell, Editor API | Воспроизводимая сборка и короткие проверки |
 | Начало | Собственные C#-модули, типизированные DTO/JSON, файловое сохранение | Авторитетное состояние и контент |
