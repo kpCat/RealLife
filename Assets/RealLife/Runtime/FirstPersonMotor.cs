@@ -21,6 +21,12 @@ namespace RealLife.Runtime
         public float Pitch { get; private set; }
         public Vector3 Position => controller.transform.position;
         public Ray Sight => new Ray(camera.transform.position, camera.transform.forward);
+        public Vector3 PredictHorizontal(Vector2 movement, Vector2 look, float seconds)
+        {
+            var walk = Vector2.ClampMagnitude(movement, 1) * WalkSpeed * seconds;
+            var heading = Quaternion.Euler(0, Yaw + look.x * MouseSensitivity, 0);
+            return Position + heading * new Vector3(walk.x, 0, walk.y);
+        }
 
         public void Drive(Vector2 movement, Vector2 look, float seconds)
         {

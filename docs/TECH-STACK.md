@@ -4,6 +4,8 @@
 
 URP, Input System и Test Framework поставляются Unity под [Unity Companion License](https://unity.com/legal/licenses/unity-companion-license). Сцена, геометрия и материалы сделаны для проекта. При запуске игра использует штатный шрифт Unity.
 
+В 0.1.0 штатный модуль Image Conversion `1.0.0` читает компактную локальную текстуру глобуса. GeoBake использует Python, Rasterio и Pillow только при подготовке файлов вне Unity. Версии Unity и ранее закреплённых пакетов сохранены. Источники, лицензии и команда импорта описаны в [GEODATA.md](GEODATA.md).
+
 | Этап | Компонент | Назначение |
 |---|---|---|
 | Начало | Unity 6.3 LTS, URP, C#, Windows x64 (Mono) | Основная платформа первой сборки |

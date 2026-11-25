@@ -1,0 +1,80 @@
+.world-menu {
+    flex-grow: 1;
+    background-color: rgb(14, 25, 31);
+    color: rgb(236, 239, 224);
+    padding: 24px 32px 16px;
+}
+
+.world-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom-width: 1px;
+    border-bottom-color: rgb(59, 79, 79);
+    padding-bottom: 11px;
+    margin-bottom: 18px;
+}
+
+.world-brand { font-size: 24px; -unity-font-style: bold; color: rgb(230, 211, 166); }
+.world-version { font-size: 13px; color: rgb(158, 176, 174); }
+.world-body { flex-grow: 1; flex-direction: row; }
+.world-view {
+    min-width: 0;
+    flex-grow: 1;
+    background-color: rgb(17, 34, 43);
+    border-width: 1px;
+    border-color: rgb(57, 80, 83);
+    overflow: hidden;
+}
+
+.world-sidebar {
+    width: 305px;
+    min-width: 265px;
+    flex-shrink: 0;
+    margin-left: 21px;
+    padding: 21px;
+    background-color: rgb(26, 41, 44);
+    border-top-width: 2px;
+    border-top-color: rgb(216, 175, 110);
+}
+
+.world-title { font-size: 29px; -unity-font-style: bold; white-space: normal; margin: 0 0 13px; }
+.world-place { font-size: 21px; -unity-font-style: bold; color: rgb(237, 219, 171); margin: 22px 0 6px; }
+.world-copy { font-size: 15px; white-space: normal; color: rgb(182, 202, 197); margin: 0 0 12px; }
+.world-status { font-size: 14px; white-space: normal; color: rgb(241, 202, 138); margin: 12px 0; }
+.world-spacer { flex-grow: 1; min-height: 8px; }
+.world-footer { margin-top: 13px; color: rgb(153, 173, 170); font-size: 12px; white-space: normal; }
+
+.world-button {
+    background-color: rgb(43, 67, 65);
+    color: rgb(234, 239, 225);
+    border-width: 1px;
+    border-color: rgb(74, 103, 96);
+    min-height: 39px;
+    margin: 4px 0;
+    padding: 3px 9px;
+    font-size: 15px;
+}
+
+.world-button:hover, .world-button:focus { background-color: rgb(61, 91, 85); }
+.world-button:disabled { opacity: 0.5; }
+.world-primary { background-color: rgb(218, 178, 108); color: rgb(24, 31, 30); -unity-font-style: bold; }
+.world-primary:hover, .world-primary:focus { background-color: rgb(240, 202, 130); }
+.world-geo { flex-grow: 1; overflow: hidden; }
+.globe-pin {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border-radius: 7px;
+    border-width: 2px;
+    border-color: rgb(255, 231, 155);
+    background-color: rgb(219, 150, 70);
+}
+.globe-label {
+    position: absolute;
+    background-color: rgba(16, 28, 32, 0.92);
+    color: rgb(255, 223, 160);
+    padding: 3px 7px;
+    font-size: 14px;
+    -unity-font-style: bold;
+}

@@ -24,7 +24,7 @@ namespace RealLife.Simulation
     public sealed class GameSession
     {
         public const int SnapshotVersion = 1;
-        public const int TicksPerSecond = 20;
+        public const int TicksPerSecond = SimulationTime.TicksPerSecond;
         public const float Reach = 2.6f;
         private const int Closed = 1;
         private const int Open = 2;
@@ -68,10 +68,10 @@ namespace RealLife.Simulation
         public long Tick { get; private set; }
         public bool IsDoorOpen => doorState == Open;
         public bool IsCarryingItem => itemPlacement == InInventory;
-        public int MinuteOfDay => (int)((8 * 60 + Tick / (TicksPerSecond * 4)) % (24 * 60));
+        public int MinuteOfDay => SimulationTime.MinuteOfDay(Tick);
         public void AdvanceTick()
         {
-            if (Tick < long.MaxValue - 1) Tick++;
+            Tick = SimulationTime.Advance(Tick);
         }
 
         public bool SetPlayerPose(LocalPoint position, float yaw, float pitch)
@@ -146,8 +146,7 @@ namespace RealLife.Simulation
 
         private bool ValidPose(LocalPoint position, float yaw, float pitch) => position.IsFinite &&
             bounds.Contains(position) && position.Y >= -0.75 && position.Y <= 3 &&
-            WorldFrame.IsFinite(yaw) && yaw >= 0 && yaw < 360 &&
-            WorldFrame.IsFinite(pitch) && pitch >= -85 && pitch <= 85;
+            PlayerPose.ValidLook(yaw, pitch);
 
         private static bool WithinReach(LocalPoint feet, LocalPoint target)
         {

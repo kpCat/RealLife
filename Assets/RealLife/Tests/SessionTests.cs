@@ -1,3 +1,4 @@
+using System;
 using NUnit.Framework;
 using RealLife.Simulation;
 
@@ -5,6 +6,110 @@ namespace RealLife.Tests
 {
     public sealed class SessionTests
     {
+        [TestCase(47.088, 28.868, 137.2)]
+        [TestCase(0, 180, -30)]
+        [TestCase(89.9999, -120, 1200)]
+        public void GeodeticCoordinatesRoundTrip(double latitude, double longitude, double height)
+        {
+            var restored = WorldFrame.ToGeodetic(WorldFrame.ToGlobal(latitude, longitude, height));
+            Assert.That(restored.Latitude, Is.EqualTo(latitude).Within(1e-9));
+            Assert.That(restored.Longitude, Is.EqualTo(longitude).Within(1e-9));
+            Assert.That(restored.Height, Is.EqualTo(height).Within(1e-5));
+        }
+
+        [Test]
+        public void CellKeyHasStableFacesAndSharedChildEdges()
+        {
+            var east = CellKey.FromGlobal(WorldFrame.ToGlobal(0, 0, 100), 16);
+            Assert.That(east, Is.EqualTo(new CellKey(0, 16, 32768, 32768)));
+            Assert.That(east.Parent, Is.EqualTo(new CellKey(0, 15, 16384, 16384)));
+            Assert.That(CellKey.FromGlobal(WorldFrame.ToGlobal(0, 90, 0), 16).Face, Is.EqualTo(2));
+            Assert.That(CellKey.FromGlobal(WorldFrame.ToGlobal(-90, 0, 0), 16).Face, Is.EqualTo(5));
+            var neighbor = new CellKey(0, 16, 32769, 32768);
+            var edge = east.DirectionAt(1, 0.5);
+            Assert.That(edge.X, Is.EqualTo(neighbor.DirectionAt(0, 0.5).X));
+            Assert.That(edge.Y, Is.EqualTo(neighbor.DirectionAt(0, 0.5).Y));
+            Assert.That(edge.Z, Is.EqualTo(neighbor.DirectionAt(0, 0.5).Z));
+        }
+
+        [Test]
+        public void RegionTerrainSharesItsPhysicalEdgeAndRejectsDamagedPackages()
+        {
+            var data = CreateRegion();
+            var world = new RegionWorld(data);
+            var left = world.Key(data.MinX, data.MinY);
+            var right = world.Key(data.MinX + 1, data.MinY);
+            for (var j = 0; j <= world.Steps; j++)
+            {
+                var a = world.TerrainVertex(left, data.Chunks[0], world.Steps, j);
+                var b = world.TerrainVertex(right, data.Chunks[1], 0, j);
+                Assert.That(a.X, Is.EqualTo(b.X));
+                Assert.That(a.Y, Is.EqualTo(b.Y));
+                Assert.That(a.Z, Is.EqualTo(b.Z));
+                Assert.That(world.TryGround(new GeoPoint(a.X, a.Z), out var sampled), Is.True);
+                Assert.That(sampled, Is.EqualTo(a.Y).Within(1e-7));
+            }
+            data.Chunks[1].Heights[0] += 1;
+            Assert.Throws<ArgumentException>(() => new RegionWorld(data));
+        }
+
+        [Test]
+        public void RegionSaveRejectsDifferentPackageAndRestoresGlobalPoseAndTick()
+        {
+            var data = CreateRegion();
+            var world = new RegionWorld(data);
+            var session = new RegionSession(world, data.Route[0], 137);
+            session.AdvanceTick();
+            var saved = session.Capture();
+            var target = new RegionSession(world, data.Route[1], 10);
+            saved.PackageRevision = "other";
+            Assert.That(target.Restore(saved), Is.False);
+            Assert.That(target.Yaw, Is.EqualTo(10));
+            Assert.That(target.Tick, Is.Zero);
+            saved.PackageRevision = data.Revision;
+            Assert.That(target.Restore(saved), Is.True);
+            Assert.That(target.PlayerLocal.X, Is.EqualTo(data.Route[0].X).Within(1e-8));
+            Assert.That(target.PlayerLocal.Z, Is.EqualTo(data.Route[0].Z).Within(1e-8));
+            Assert.That(target.Yaw, Is.EqualTo(137));
+            Assert.That(target.Tick, Is.EqualTo(1));
+
+            var boundary = world.Frame.ProjectDirection(world.Key(data.MaxX - 1, data.MinY).DirectionAt(1, .5));
+            var justOutside = new GeoPoint(boundary.X + .0005, boundary.Z);
+            Assert.That(world.TryGround(justOutside, out var edgeHeight), Is.True);
+            saved.Player = world.Frame.ToGlobal(new LocalPoint(justOutside.X, edgeHeight, justOutside.Z));
+            Assert.That(target.Restore(saved), Is.False);
+            Assert.That(target.PlayerLocal.X, Is.EqualTo(data.Route[0].X).Within(1e-8));
+        }
+
+        private static RegionDefinition CreateRegion()
+        {
+            const int level = 16, center = 32768;
+            var frame = new WorldFrame(0, 0, 0);
+            var left = new CellKey(0, level, center, center);
+            var right = new CellKey(0, level, center + 1, center);
+            GeoPoint Point(CellKey key, double x, double y)
+            {
+                var point = frame.ProjectDirection(key.DirectionAt(x, y));
+                return new GeoPoint(point.X, point.Z);
+            }
+            RegionChunk Chunk(CellKey key, float offset)
+            {
+                var heights = new float[9];
+                for (var i = 0; i < heights.Length; i++) heights[i] = offset + i % 3 + i / 3;
+                return new RegionChunk { X = key.X, Y = key.Y, Heights = heights,
+                    Roads = Array.Empty<RoadSpan>(), Buildings = Array.Empty<BuildingFootprint>() };
+            }
+            return new RegionDefinition
+            {
+                Format = 1, GridVersion = 1, Level = level, MinX = center, MinY = center, MaxX = center + 2, MaxY = center + 1,
+                PackageId = "region.fixture", Title = "Тестовый регион", Revision = "r1", Steps = 2,
+                Outline = new[] { Point(left, 0, 0), Point(right, 1, 0), Point(right, 1, 1), Point(left, 0, 1) },
+                Route = new[] { Point(left, .5, .5), Point(right, .5, .5) },
+                Chunks = new[] { Chunk(left, 0), Chunk(right, 2) },
+                Sources = new[] { new RegionSource(), new RegionSource(), new RegionSource() }
+            };
+        }
+
         [Test]
         public void DistrictFrameUsesWgs84AndRoundTripsLocalMetres()
         {

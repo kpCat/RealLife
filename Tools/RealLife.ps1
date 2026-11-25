@@ -47,6 +47,17 @@ function Invoke-CheckedProcess([string]$Exe, [string[]]$Arguments, [string]$Log,
     finally { $process.Dispose() }
 }
 
+function Assert-SmokeLog([string]$Log, [string]$Success) {
+    $errors = Select-String -LiteralPath $Log -Pattern '^[\w.]*(Exception|Error):'
+    if ($errors) {
+        $errors | ForEach-Object { Write-Host $_.Line }
+        throw "Player reported an exception. Log: $Log"
+    }
+    if (-not (Select-String -LiteralPath $Log -Pattern ('^' + [regex]::Escape($Success) + '$') -Quiet)) {
+        throw "Player did not confirm its scenario. Log: $Log"
+    }
+}
+
 $versionLine = Get-Content -LiteralPath (Join-Path $project 'ProjectSettings\ProjectVersion.txt') |
     Select-String '^m_EditorVersion: (\S+)$'
 $version = $versionLine.Matches[0].Groups[1].Value
@@ -63,14 +74,14 @@ $UnityPath = (Get-Item -LiteralPath $UnityPath).FullName
 $installedVersion = (Get-Item -LiteralPath $UnityPath).VersionInfo.ProductVersion
 if (($installedVersion -split '_')[0] -ne $version) { throw "Expected Unity $version, found $installedVersion." }
 
-$scratchBase = 'D:\Temp\Codex\RealLife\REALLIFE-001'
+$scratchBase = 'D:\Temp\Codex\RealLife\REALLIFE-002'
 if (-not (Test-Path -LiteralPath 'D:\Temp' -PathType Container)) { throw 'D:\Temp is unavailable.' }
 $run = [Guid]::NewGuid().ToString('N').Substring(0, 12)
 $scratch = Join-Path $scratchBase $run
 if (Test-Path -LiteralPath $scratch) { throw "Scratch path already exists: $scratch" }
 New-Item -ItemType Directory -Path $scratch | Out-Null
 $markerPath = Join-Path $scratch '.codex-owned.json'
-@{ project = 'RealLife'; task = 'REALLIFE-001'; run = $run; created_at = [DateTime]::UtcNow.ToString('o'); absolute_root = $scratch } |
+@{ project = 'RealLife'; task = 'REALLIFE-002'; run = $run; created_at = [DateTime]::UtcNow.ToString('o'); absolute_root = $scratch } |
     ConvertTo-Json | Set-Content -LiteralPath $markerPath -Encoding utf8
 Write-Host "Scratch: $scratch"
 
@@ -89,6 +100,14 @@ try {
     Write-Host "Edit Mode: $($testRun.passed) passed."
 
     if ($Action -eq 'Build') {
+        $geoData = Join-Path $project 'Builds\GeoData'
+        $geoFiles = @('region.json', 'earth.png') | ForEach-Object {
+            $file = Join-Path $geoData $_
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+                throw "Missing offline source $file. Prepare it with Tools/GeoBake.py (see docs/GEODATA.md)."
+            }
+            $file
+        }
         $candidate = Join-Path $scratch 'candidate'
         $candidatePlayer = Join-Path $candidate 'RealLife.exe'
         $buildLog = Join-Path $scratch 'build.log'
@@ -102,18 +121,34 @@ try {
             Move-Item -LiteralPath $burstSymbols -Destination (Join-Path $scratch 'burst-debug')
         }
 
+        $streamingGeo = Join-Path $candidate 'RealLife_Data\StreamingAssets\RealLifeGeo'
+        New-Item -ItemType Directory -Path $streamingGeo -Force | Out-Null
+        Copy-Item -LiteralPath $geoFiles -Destination $streamingGeo
+        Copy-Item -LiteralPath (Join-Path $project 'docs\GEODATA.md') -Destination (Join-Path $streamingGeo 'NOTICE.md')
         $smokeLog = Join-Path $scratch 'player.log'
         $smokeData = Join-Path $scratch 'smoke'
         $playerArgs = @('-realLifeSmoke', "`"$smokeData`"", '-logFile', "`"$smokeLog`"",
             '-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '800')
         Invoke-CheckedProcess $candidatePlayer $playerArgs $smokeLog 90
-        if (-not (Select-String -LiteralPath $smokeLog -Pattern '^RealLife Windows smoke passed\.$' -Quiet)) {
-            throw "Player did not confirm the gameplay scenario. Log: $smokeLog"
-        }
+        Assert-SmokeLog $smokeLog 'RealLife Windows smoke passed.'
         Write-Host 'Windows Player smoke passed.'
 
+        $geoSmokeData = Join-Path $scratch 'geo-smoke'
+        foreach ($route in @(
+            @{ flag = '-realLifeGeoSmoke'; log = 'region.log'; expected = 'RealLife region walking smoke passed.' },
+            @{ flag = '-realLifeGeoResume'; log = 'region-restart.log'; expected = 'RealLife region restart smoke passed.' }
+        )) {
+            $geoLog = Join-Path $scratch $route.log
+            $geoArgs = @($route.flag, "`"$geoSmokeData`"", '-logFile', "`"$geoLog`"",
+                '-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '800')
+            Invoke-CheckedProcess $candidatePlayer $geoArgs $geoLog 120
+            Assert-SmokeLog $geoLog $route.expected
+            Select-String -LiteralPath $geoLog -Pattern '^Region route:' | ForEach-Object { Write-Host $_.Line }
+            Write-Host $route.expected
+        }
+
         $buildMarker = '.reallife-build.json'
-        @{ project = 'RealLife'; directory = $release; editor = $version } |
+        @{ project = 'RealLife'; directory = $release; editor = $version; release = '0.1.0' } |
             ConvertTo-Json | Set-Content -LiteralPath (Join-Path $candidate $buildMarker) -Encoding utf8
         New-Item -ItemType Directory -Path (Split-Path -Parent $release) -Force | Out-Null
         Assert-NoLinks $candidate
@@ -140,7 +175,7 @@ finally {
         $marker = Get-Content -Raw -LiteralPath $markerPath | ConvertFrom-Json
         $resolved = (Resolve-Path -LiteralPath $scratch).Path
         if ($resolved -ne $scratch -or $marker.absolute_root -ne $resolved -or $marker.run -ne $run -or
-            $marker.project -ne 'RealLife' -or $marker.task -ne 'REALLIFE-001') {
+            $marker.project -ne 'RealLife' -or $marker.task -ne 'REALLIFE-002') {
             throw "Scratch ownership could not be verified: $scratch"
         }
         Assert-NoLinks $resolved

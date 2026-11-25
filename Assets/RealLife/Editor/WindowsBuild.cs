@@ -22,6 +22,7 @@ namespace RealLife.Editor
                 throw new BuildFailedException("Unity Windows x64 build support is required.");
 
             DistrictAuthoring.Generate();
+            EarthAuthoring.Generate();
             PlayerSettings.SetScriptingBackend(NamedBuildTarget.Standalone, ScriptingImplementation.Mono2x);
             PlayerSettings.SetUseDefaultGraphicsAPIs(target, false);
             PlayerSettings.SetGraphicsAPIs(target, new[] { GraphicsDeviceType.Direct3D11 });
@@ -30,12 +31,12 @@ namespace RealLife.Editor
             PlayerSettings.defaultScreenHeight = 800;
             PlayerSettings.resizableWindow = true;
             PlayerSettings.forceSingleInstance = true;
-            PlayerSettings.bundleVersion = "0.0.1";
+            PlayerSettings.bundleVersion = "0.1.0";
             AssetDatabase.SaveAssets();
 
             var result = BuildPipeline.BuildPlayer(new BuildPlayerOptions
             {
-                scenes = new[] { DistrictAuthoring.ScenePath },
+                scenes = new[] { EarthAuthoring.ScenePath, DistrictAuthoring.ScenePath },
                 target = target,
                 locationPathName = Path.GetFullPath(args[outputIndex + 1]),
                 options = BuildOptions.StrictMode

@@ -15,11 +15,12 @@ namespace RealLife.Runtime
         private string currentNotice;
         private float noticeUntil;
 
-        public GameHud(UIDocument document, StyleSheet styles, string location, Action resume, Action save, Action load)
+        public GameHud(UIDocument document, StyleSheet styles, string location, Action resume, Action save, Action load,
+            Action openWorlds = null, bool hasItems = true)
         {
             var root = document.rootVisualElement;
             root.Clear();
-            root.styleSheets.Add(styles);
+            if (!root.styleSheets.Contains(styles)) root.styleSheets.Add(styles);
             var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             root.style.unityFontDefinition = FontDefinition.FromFont(font);
             root.pickingMode = PickingMode.Ignore;
@@ -41,7 +42,10 @@ namespace RealLife.Runtime
 
             inventory = Label("", "inventory");
             root.Add(inventory);
-            root.Add(Label("WASD  Движение     E  Действие     F5 / F9  Сохранить / загрузить", "controls"));
+            if (!hasItems) inventory.style.display = DisplayStyle.None;
+            var controls = hasItems ? "WASD  Движение     E  Действие     F5 / F9  Сохранить / загрузить"
+                : "WASD  Движение     F5 / F9  Сохранить / загрузить     Esc  Меню";
+            root.Add(Label(controls, "controls"));
 
             pause = new VisualElement();
             pause.AddToClassList("pause");
@@ -51,6 +55,7 @@ namespace RealLife.Runtime
             menu.Add(new Button(resume) { text = "Продолжить" });
             menu.Add(new Button(save) { text = "Сохранить" });
             menu.Add(new Button(load) { text = "Загрузить" });
+            if (openWorlds != null) menu.Add(new Button(openWorlds) { text = "Выбор мира" });
             menu.Add(new Button(() => Application.Quit()) { text = "Выйти из игры" });
             pause.Add(menu);
             root.Add(pause);

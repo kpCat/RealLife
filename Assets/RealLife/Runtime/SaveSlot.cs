@@ -19,14 +19,15 @@ namespace RealLife.Runtime
             PreviousPath = Path.Combine(directory, "slot-01.previous.json");
         }
 
-        public Task WriteAsync(SessionSnapshot snapshot, bool preservePrevious)
+        public Task WriteAsync<T>(T snapshot, bool preservePrevious)
         {
             var json = JsonUtility.ToJson(snapshot, true);
             return Task.Run(() => Write(json, preservePrevious));
         }
 
-        public static SessionSnapshot Read(string path) =>
-            JsonUtility.FromJson<SessionSnapshot>(File.ReadAllText(path));
+        public static SessionSnapshot Read(string path) => Read<SessionSnapshot>(path);
+
+        public static T Read<T>(string path) => JsonUtility.FromJson<T>(File.ReadAllText(path));
 
         private void Write(string json, bool preservePrevious)
         {

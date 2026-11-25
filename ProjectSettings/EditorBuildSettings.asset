@@ -6,6 +6,9 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/RealLife/Generated/Earth.unity
+    guid: 02fbb280f5f449b499811c448d694e00
+  - enabled: 1
     path: Assets/RealLife/Generated/Sadovaya.unity
     guid: 2074b34e6c862d140b363a66cbf58fc1
   m_configObjects: {}

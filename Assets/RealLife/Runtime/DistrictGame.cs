@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using RealLife.Simulation;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
 using Cursor = UnityEngine.Cursor;
 
@@ -77,8 +78,9 @@ namespace RealLife.Runtime
                 session = new GameSession(district);
                 motor = new FirstPersonMotor(character, playerCamera);
                 slot = new SaveSlot(saveRoot);
+                Action worlds = Application.CanStreamedLevelBeLoaded("Earth") ? OpenWorlds : null;
                 hud = new GameHud(ui, hudStyle, district.Title, () => SetPaused(false),
-                    () => pendingSlot = SlotCommand.Save, () => pendingSlot = SlotCommand.Load);
+                    () => pendingSlot = SlotCommand.Save, () => pendingSlot = SlotCommand.Load, worlds);
                 RestorePresentation();
                 SetPaused(false);
                 RefreshHud();
@@ -150,6 +152,12 @@ namespace RealLife.Runtime
         {
             try { saveTask?.GetAwaiter().GetResult(); }
             catch (Exception error) { Debug.LogException(error); }
+        }
+
+        private void OpenWorlds()
+        {
+            OnApplicationQuit();
+            SceneManager.LoadScene("Earth");
         }
 
         private void SetPaused(bool value)
