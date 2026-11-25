@@ -1,0 +1,71 @@
+# Unity: generated project directories (root project).
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+/[Bb]uild/
+/[Bb]uilds/
+/[Bb]uildOutput/
+/[Aa]rtifacts/
+/[Tt]est[Rr]esults/
+/[Cc]ache/
+/[Ll]ocal[Dd]ata/
+/[Ss]aves/
+/[Dd]ata/[Rr]aw/
+/[Dd]ata/[Cc]ache/
+/[Dd]ata/[Pp]ackages/
+/[Dd]ata/[Ss]aves/
+
+# IDE and IDE-generated C# files.
+.vs/
+.idea/
+.vscode/
+*.csproj
+*.sln
+*.slnx
+*.unityproj
+*.booproj
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.DotSettings.user
+*.csproj.user
+sysinfo.txt
+
+# Unity-produced diagnostics and generated content.
+crashlytics-build.properties
+*.stackdump
+*.log
+*.tmp
+*.cache
+/[Ss]erverData/
+
+# Restricted or locally installed third-party assets, not redistributable.
+# Do not place project-owned code or redistributable source assets here.
+/[Aa]ssets/[Tt]hirdPartyLocal/
+/[Aa]ssets/[Tt]hirdPartyLocal.meta
+
+# Local credentials/configuration — never commit secrets.
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.keystore
+*.jks
+/appsettings.Local.json
+/.local/
+
+# OS and editor noise.
+.DS_Store
+Thumbs.db
+Desktop.ini
+*~
