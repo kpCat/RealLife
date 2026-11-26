@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using RealLife.Simulation;
 using UnityEngine;
@@ -33,6 +34,7 @@ namespace RealLife.Runtime
         private Button start;
         private string saveRoot;
         private bool automation;
+        private bool simulateResidents;
 
         internal RegionWorld Region => world;
         internal IReadOnlyList<BuildingPlan> AccessPlans => accessPlans;
@@ -63,8 +65,13 @@ namespace RealLife.Runtime
             var restart = Array.IndexOf(args, "-realLifeGeoResume");
             var interiors = Array.IndexOf(args, "-realLifeInteriorSmoke");
             var interiorRestart = Array.IndexOf(args, "-realLifeInteriorResume");
-            var automatedRun = Math.Max(Math.Max(smoke, restart), Math.Max(interiors, interiorRestart));
+            var residents = Array.IndexOf(args, "-realLifeResidentsSmoke");
+            var residentsRestart = Array.IndexOf(args, "-realLifeResidentsResume");
+            var populationSmoke = residents >= 0 || residentsRestart >= 0;
+            var automatedRun = Math.Max(Math.Max(Math.Max(smoke, restart), Math.Max(interiors, interiorRestart)),
+                Math.Max(residents, residentsRestart));
             automation = automatedRun >= 0;
+            simulateResidents = !automation || populationSmoke;
             saveRoot = automation ? Path.GetFullPath(args[automatedRun + 1]) :
                 Path.Combine(Application.persistentDataPath, "Saves", "Earth");
             ShowGlobe(loading: true);
@@ -97,8 +104,8 @@ namespace RealLife.Runtime
             else Debug.LogWarning($"Region unavailable: {loadPackage.Exception?.GetBaseException().Message}");
             ShowGlobe();
             if (automation)
-                yield return RegionSmoke.Run(this, restart >= 0 || interiorRestart >= 0,
-                    interiors >= 0 || interiorRestart >= 0);
+                yield return RegionSmoke.Run(this, restart >= 0 || interiorRestart >= 0 || residentsRestart >= 0,
+                    interiors >= 0 || interiorRestart >= 0, populationSmoke);
         }
 
         private void Update()
@@ -172,10 +179,11 @@ namespace RealLife.Runtime
             sidebar.Add(Block("world-spacer"));
             sidebar.Add(Text("Планы помещений и назначение доступных зданий вымышлены.", "world-copy"));
             sidebar.Add(Button("К глобусу", () => ShowGlobe()));
-            selected = world.Route[world.Route.Count / 2];
-            if (!world.IsSafeStart(selected))
-                foreach (var point in world.Route)
-                    if (world.IsSafeStart(point)) { selected = point; break; }
+            var middle = world.Route[world.Route.Count / 2];
+            selected = world.Route.Where(world.IsSafeStart)
+                .OrderByDescending(point => accessPlans.Count(plan => plan.Kind != BuildingKind.PublicPremises &&
+                    DistanceSquared(point, plan.Approach.X, plan.Approach.Z) < 90 * 90))
+                .ThenBy(point => DistanceSquared(point, middle.X, middle.Z)).DefaultIfEmpty(middle).First();
             map = new RegionMap(world, accessPlans, selected, ChooseStart);
             viewport.Add(map);
             ChooseStart(selected);
@@ -202,7 +210,7 @@ namespace RealLife.Runtime
             if (map == null || game != null || !world.IsSafeStart(selected)) return false;
             var yaw = 165f;
             game = new RegionGame(world, selected, yaw, document, hudStyle, regionPalette, catalog,
-                PackageSaveDirectory, () => ShowGlobe(), automation);
+                PackageSaveDirectory, () => ShowGlobe(), automation, simulateResidents);
             if (resume && !game.Load())
             {
                 game.Dispose();
@@ -215,6 +223,9 @@ namespace RealLife.Runtime
         }
 
         private string PackageSaveDirectory => Path.Combine(saveRoot, world.PackageId);
+
+        private static double DistanceSquared(GeoPoint point, double x, double z) =>
+            (point.X - x) * (point.X - x) + (point.Z - z) * (point.Z - z);
 
         private void Layout()
         {

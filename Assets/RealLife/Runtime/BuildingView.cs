@@ -21,6 +21,7 @@ namespace RealLife.Runtime
 
     internal sealed class BuildingView : IDisposable
     {
+        internal const double EntryRampWidth = 1.62;
         private const double Wall = BuildingPlan.WallThickness;
         private const double Storey = BuildingPlan.StoreyHeight;
         private readonly BuildingPlan plan;
@@ -123,7 +124,7 @@ namespace RealLife.Runtime
             }
             Part("Entry lintel", 0, BuildingDoor.Height + .13, -.12, 1.58, .16, .32, shop ? Tone.Metal : Tone.Trim, false);
             if (shop) Part("Shop awning", 0, 2.32, -.48, 2.40, .13, .96, Tone.Metal, false);
-            Slope("Entry ramp", 0, plan.LandingGround - plan.GroundFloor, -BuildingPlan.EntryRun, 0, 0, 1.62, Tone.Paving);
+            Slope("Entry ramp", 0, plan.LandingGround - plan.GroundFloor, -BuildingPlan.EntryRun, 0, 0, EntryRampWidth, Tone.Paving);
         }
 
         private void Gable(double z, double y, double halfWidth, double rise, Tone material, bool back)

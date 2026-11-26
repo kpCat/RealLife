@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using RealLife.Simulation;
@@ -15,25 +16,28 @@ namespace RealLife.Runtime
         private readonly RegionSession session;
         private readonly FirstPersonMotor motor;
         private readonly RegionView view;
+        private readonly ResidentView residentView;
         private readonly GameHud hud;
         private readonly SaveSlot slot;
-        private readonly SaveSlot legacySlot;
+        private readonly SaveSlot[] readSlots;
         private readonly RegionInteractions interactions;
         private readonly GameObject root = new GameObject("Regional first person");
         private readonly GameObject sunlight;
         private readonly bool automation;
+        private readonly Func<string, LocalPoint, LocalPoint, bool> canResidentStep;
         private Task write;
         private float remainder;
         private bool paused;
+        private int presentationRevision;
 
         public RegionGame(RegionWorld world, GeoPoint spawn, float yaw, UIDocument ui, StyleSheet styles, Material[] colors,
-            NeighborhoodCatalog catalog, string saveDirectory, Action openWorlds, bool automation)
+            NeighborhoodCatalog catalog, string saveDirectory, Action openWorlds, bool automation, bool enableResidents = true)
         {
             this.world = world;
             this.automation = automation;
-            session = new RegionSession(world, spawn, yaw, catalog);
-            slot = NewSaveSlot(saveDirectory);
-            legacySlot = new SaveSlot(saveDirectory);
+            session = new RegionSession(world, spawn, yaw, catalog, enableResidents: enableResidents);
+            readSlots = ReadSlots(saveDirectory);
+            slot = readSlots[0];
             var controller = root.AddComponent<CharacterController>();
             controller.height = 1.82f;
             controller.radius = 0.27f;
@@ -42,6 +46,7 @@ namespace RealLife.Runtime
             controller.stepOffset = 0.25f;
             controller.minMoveDistance = 0;
             var camera = new GameObject("Regional view").AddComponent<Camera>();
+            RegionalCamera = camera;
             camera.transform.SetParent(root.transform, false);
             camera.transform.localPosition = Vector3.up * 1.63f;
             camera.fieldOfView = 65;
@@ -66,16 +71,21 @@ namespace RealLife.Runtime
 
             motor = new FirstPersonMotor(controller, camera);
             view = new RegionView(world, colors, session.Buildings, VisibleItem);
+            residentView = new ResidentView(world, view, controller, colors[(int)RegionView.Tone.Plaster]);
+            canResidentStep = CanResidentStep;
             hud = new GameHud(ui, styles, world.Title, () => SetPaused(false), Save, () => Load(),
                 openWorlds, hasItems: false, regionalInventory: true);
-            interactions = new RegionInteractions(session, view, hud, ui.rootVisualElement, SetInventoryMode);
+            interactions = new RegionInteractions(session, view, residentView, hud, ui.rootVisualElement,
+                SetModalMode, SyncWorld);
             PreparePresentation(session.PlayerLocal);
             RestoreMotor();
+            PresentResidents(0);
             SetPaused(false);
             RefreshHud();
         }
 
         public Vector3 Position => motor.Position;
+        internal Camera RegionalCamera { get; }
         public float Yaw => motor.Yaw;
         public float Pitch => motor.Pitch;
         public long Tick => session.Tick;
@@ -84,16 +94,31 @@ namespace RealLife.Runtime
         public RegionView View => view;
         public Buildings Buildings => session.Buildings;
         public InventoryPanel InventoryPanel => interactions.Panel;
+        public IReadOnlyList<ResidentViewData> Residents => session.Residents;
+        public int MaterializedResidentCount => residentView.Count;
+        public bool ConversationOpen => interactions.ConversationOpen;
+        public ConversationResult LastConversation => interactions.LastConversation;
         public string PlayerInventoryId => session.PlayerInventoryId;
         public string SavePath => slot.CurrentPath;
         public string PreviousSavePath => slot.PreviousPath;
 
         public InventoryContainerView GetInventory(string id) => session.GetInventory(id);
+        public RegionSnapshot CaptureState() => session.Capture();
         public bool TryFocus(out BuildingFocus focus) => interactions.TryFocus(motor.Sight, out focus);
+        public bool TryFocusResident(out ResidentViewData resident) => interactions.TryFocusResident(motor.Sight, out resident);
+        public bool IsResidentMaterialized(string id) => residentView.Contains(id);
+        public bool AskResident(ConversationTopic topic) => interactions.Ask(topic);
+        public void CloseInteraction() => interactions.Close();
         public bool Interact(InteractionControl control) => !paused && interactions.Activate(control, motor.Sight);
 
-        internal static bool HasSave(string directory) => NewSaveSlot(directory).Exists || new SaveSlot(directory).Exists;
-        private static SaveSlot NewSaveSlot(string directory) => new SaveSlot(directory, "slot-01-v3");
+        internal static bool HasSave(string directory) => Array.Exists(ReadSlots(directory), candidate => candidate.Exists);
+
+        private static SaveSlot[] ReadSlots(string directory) => new[]
+        {
+            new SaveSlot(directory, "slot-01-v4"),
+            new SaveSlot(directory, "slot-01-v3"),
+            new SaveSlot(directory)
+        };
 
         public void ReadInput(float seconds)
         {
@@ -139,8 +164,10 @@ namespace RealLife.Runtime
             while (remainder >= step)
             {
                 remainder -= step;
-                session.AdvanceTick();
+                session.AdvanceTick(canResidentStep);
             }
+            SyncWorld();
+            PresentResidents(seconds);
             RefreshHud();
         }
 
@@ -167,23 +194,32 @@ namespace RealLife.Runtime
         public bool Load()
         {
             if (Busy()) return false;
-            var source = slot.Exists ? slot : legacySlot;
-            var current = Read(source.CurrentPath);
-            var previous = Read(source.PreviousPath);
-            var valid = session.TryGetRestorePosition(current, out var position) ? current :
-                session.TryGetRestorePosition(previous, out position) ? previous : null;
-            if (valid != null)
+            var incompatible = false;
+            foreach (var source in readSlots)
             {
+                var current = Read(source.CurrentPath);
+                var previous = Read(source.PreviousPath);
+                var valid = session.TryGetRestorePosition(current, out var position) ? current :
+                    session.TryGetRestorePosition(previous, out position) ? previous : null;
+                if (valid == null)
+                {
+                    incompatible |= Incompatible(current) || Incompatible(previous);
+                    continue;
+                }
+
+                residentView.Reset();
                 PreparePresentation(position);
                 if (!session.Restore(valid))
                     throw new InvalidOperationException("Validated region snapshot could not be restored.");
                 view.RefreshInteractions();
+                presentationRevision = session.PresentationRevision;
                 RestoreMotor();
+                PresentResidents(0);
                 interactions.Close();
                 hud.Announce("Игра загружена.");
                 return true;
             }
-            var message = Incompatible(current) || Incompatible(previous)
+            var message = incompatible
                 ? "Для сохранения требуется другая версия пакета региона."
                 : "Подходящего сохранения нет.";
             hud.Announce(message);
@@ -225,6 +261,22 @@ namespace RealLife.Runtime
 
         private void PreparePresentation(LocalPoint position) => view.Prepare(position);
 
+        private bool CanResidentStep(string id, LocalPoint from, LocalPoint to)
+        {
+            if (!residentView.NeedsCollision(from, to)) return true;
+            SyncWorld();
+            return residentView.CanStep(id, from, to, session.Residents);
+        }
+
+        private void SyncWorld()
+        {
+            if (presentationRevision == session.PresentationRevision) return;
+            view.RefreshInteractions();
+            presentationRevision = session.PresentationRevision;
+        }
+
+        private void PresentResidents(float seconds) => residentView.Present(session.Residents, session.PlayerLocal, seconds);
+
         private void RestoreMotor()
         {
             motor.Restore(session.PlayerLocal, session.Yaw, session.Pitch);
@@ -242,12 +294,12 @@ namespace RealLife.Runtime
             paused = value;
             if (value) interactions.Close();
             hud.SetPaused(value);
-            SetInventoryMode(interactions.IsOpen);
+            SetModalMode(interactions.IsOpen);
         }
 
-        private void SetInventoryMode(bool open)
+        private void SetModalMode(bool open)
         {
-            hud.SetInventoryOpen(open);
+            hud.SetModalOpen(open);
             Cursor.lockState = paused || open || automation ? CursorLockMode.None : CursorLockMode.Locked;
             Cursor.visible = paused || open || automation;
         }
@@ -263,6 +315,7 @@ namespace RealLife.Runtime
         {
             try { write?.GetAwaiter().GetResult(); }
             catch (Exception error) { Debug.LogException(error); }
+            residentView.Dispose();
             view.Dispose();
             if (root != null)
             {

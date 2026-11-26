@@ -98,7 +98,7 @@ namespace RealLife.Tests
 
             Assert.That(session.Restore(legacy), Is.True);
             var upgraded = session.Capture();
-            Assert.That(upgraded.Version, Is.EqualTo(3));
+            Assert.That(upgraded.Version, Is.EqualTo(4));
             Assert.That(upgraded.Player.X, Is.EqualTo(legacy.Player.X));
             Assert.That(upgraded.Player.Y, Is.EqualTo(legacy.Player.Y));
             Assert.That(upgraded.Player.Z, Is.EqualTo(legacy.Player.Z));

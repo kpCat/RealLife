@@ -14,7 +14,7 @@ namespace RealLife.Runtime
         private readonly VisualElement crosshair;
         private readonly VisualElement context;
         private bool paused;
-        private bool inventoryOpen;
+        private bool modalOpen;
         private string currentNotice;
         private float noticeUntil;
 
@@ -74,14 +74,14 @@ namespace RealLife.Runtime
             RefreshCrosshair();
         }
 
-        public void SetInventoryOpen(bool open)
+        public void SetModalOpen(bool open)
         {
-            inventoryOpen = open;
+            modalOpen = open;
             context.style.display = open ? DisplayStyle.None : DisplayStyle.Flex;
             RefreshCrosshair();
         }
 
-        private void RefreshCrosshair() => crosshair.style.display = paused || inventoryOpen
+        private void RefreshCrosshair() => crosshair.style.display = paused || modalOpen
             ? DisplayStyle.None : DisplayStyle.Flex;
 
         public void Announce(string message)

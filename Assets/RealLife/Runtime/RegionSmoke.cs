@@ -10,9 +10,9 @@ namespace RealLife.Runtime
 {
     internal static class RegionSmoke
     {
-        public static IEnumerator Run(WorldMenu menu, bool restart, bool interiors)
+        public static IEnumerator Run(WorldMenu menu, bool restart, bool interiors, bool residents)
         {
-            using var scenario = Scenario(menu, restart, interiors).GetEnumerator();
+            using var scenario = Scenario(menu, restart, interiors, residents).GetEnumerator();
             while (true)
             {
                 Exception failure = null;
@@ -28,17 +28,19 @@ namespace RealLife.Runtime
                 if (!next) break;
                 yield return scenario.Current;
             }
-            Debug.Log(interiors
+            Debug.Log(residents
+                ? restart ? "RealLife resident restart smoke passed." : "RealLife resident life smoke passed."
+                : interiors
                 ? restart ? "RealLife interior restart smoke passed." : "RealLife interior walking smoke passed."
                 : restart ? "RealLife region restart smoke passed." : "RealLife region walking smoke passed.");
             Application.Quit(0);
         }
 
-        private static IEnumerable<object> Scenario(WorldMenu menu, bool restart, bool interiors)
+        private static IEnumerable<object> Scenario(WorldMenu menu, bool restart, bool interiors, bool residents)
         {
-            Require(Application.platform == RuntimePlatform.WindowsPlayer && Application.version == "0.2.0" &&
+            Require(Application.platform == RuntimePlatform.WindowsPlayer && Application.version == "0.3.0" &&
                 GraphicsSettings.currentRenderPipeline != null && SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null,
-                "Windows 0.2.0 with active URP and graphics");
+                "Windows 0.3.0 with active URP and graphics");
             var world = menu.Region;
             Require(world != null && menu.Globe != null && menu.Map == null, "offline data and globe loaded at startup");
             yield return null;
@@ -52,6 +54,12 @@ namespace RealLife.Runtime
             Require(menu.Map != null, "globe marker opens the published map");
             yield return null;
             yield return new WaitForEndOfFrame();
+
+            if (residents)
+            {
+                foreach (var frame in ResidentSmoke.Scenario(menu, restart)) yield return frame;
+                yield break;
+            }
 
             if (interiors)
             {

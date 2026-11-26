@@ -11,7 +11,7 @@ namespace RealLife.Runtime
         internal enum ActionKind
         {
             TransferToOther, TransferToPlayer, MergeToOther, MergeToPlayer, SplitPlayer, SplitOther,
-            ChoosePlayerMergeTarget, ChooseOtherMergeTarget, MergePlayer, MergeOther, ReturnToPlacement, Close
+            ChoosePlayerMergeTarget, ChooseOtherMergeTarget, MergePlayer, MergeOther, ReturnToPlacement, Close, Use
         }
 
         private readonly Action<InventoryMove> move;
@@ -19,11 +19,13 @@ namespace RealLife.Runtime
         private readonly Func<InventoryMove, InventoryMoveFailure> checkMove;
         private readonly Func<string, int, InventoryMoveFailure> checkPlacement;
         private readonly Func<InventoryMoveFailure, string> reason;
+        private readonly Action<InventoryStackView> use;
         private readonly Dictionary<ActionKind, Button> buttons = new Dictionary<ActionKind, Button>();
         private readonly Column player;
         private readonly Column other;
         private readonly Label notice;
         private readonly Button place;
+        private readonly Button useItem;
         private Column activeColumn;
         private string placementName;
 
@@ -32,13 +34,15 @@ namespace RealLife.Runtime
 
         internal InventoryPanel(Action<InventoryMove> move, Action<string, int> returnToPlacement, Action close,
             Func<InventoryMove, InventoryMoveFailure> checkMove,
-            Func<string, int, InventoryMoveFailure> checkPlacement, Func<InventoryMoveFailure, string> reason)
+            Func<string, int, InventoryMoveFailure> checkPlacement, Func<InventoryMoveFailure, string> reason,
+            Action<InventoryStackView> use)
         {
             this.move = move;
             this.returnToPlacement = returnToPlacement;
             this.checkMove = checkMove;
             this.checkPlacement = checkPlacement;
             this.reason = reason;
+            this.use = use;
             Element = Block("inventory-overlay");
             var panel = Block("inventory-panel");
             Element.Add(panel);
@@ -61,6 +65,8 @@ namespace RealLife.Runtime
             place = MakeButton(ActionKind.ReturnToPlacement, "Положить", ReturnToPlacement);
             place.AddToClassList("inventory-place");
             player.Element.Add(place);
+            useItem = MakeButton(ActionKind.Use, "Использовать", UseSelected);
+            player.StackRow.Add(useItem);
             notice = Text("", "inventory-notice");
             panel.Add(notice);
             Hide();
@@ -161,6 +167,12 @@ namespace RealLife.Runtime
                 returnToPlacement(selected.InstanceId, player.Quantity.value);
         }
 
+        private void UseSelected()
+        {
+            if (player.Source is InventoryStackView selected && selected.UseKind != InventoryUseKind.None)
+                use(selected);
+        }
+
         private void RefreshActions()
         {
             RefreshActions(player, other);
@@ -170,6 +182,10 @@ namespace RealLife.Runtime
             place.text = $"Положить · {placementName}";
             SetAvailable(place, canPlace && player.ValidQuantity && player.Source is InventoryStackView selected
                 ? checkPlacement(selected.InstanceId, player.Quantity.value) : InventoryMoveFailure.InvalidQuantity);
+            var useKind = player.Source?.UseKind ?? InventoryUseKind.None;
+            Display(useItem, useKind != InventoryUseKind.None && !player.ChoosingTarget);
+            useItem.SetEnabled(useKind != InventoryUseKind.None && !player.ChoosingTarget);
+            useItem.text = useKind == InventoryUseKind.Drink ? "Выпить одну порцию" : "Съесть одну порцию";
         }
 
         private void RefreshActions(Column source, Column destination)

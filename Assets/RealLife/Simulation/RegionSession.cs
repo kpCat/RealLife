@@ -1,12 +1,17 @@
 using System;
+using System.Collections.Generic;
 
 namespace RealLife.Simulation
 {
     internal static class SimulationTime
     {
         public const int TicksPerSecond = 20;
-        public static int MinuteOfDay(long tick) => (int)((8 * 60 + tick / (TicksPerSecond * 4)) % (24 * 60));
-        public static long Advance(long tick) => tick < long.MaxValue - 1 ? tick + 1 : tick;
+        public const int TicksPerMinute = TicksPerSecond * 4;
+        private static long TotalMinutes(long tick) => 8 * 60 + tick / TicksPerMinute;
+        public static int MinuteOfDay(long tick) => (int)(TotalMinutes(tick) % (24 * 60));
+        public static long Day(long tick) => TotalMinutes(tick) / (24 * 60);
+        public static long After(long tick, int duration) => Math.Min(tick, long.MaxValue - 1 - duration) + duration;
+        public static long Advance(long tick) => After(tick, 1);
     }
 
     internal static class PlayerPose
@@ -25,32 +30,42 @@ namespace RealLife.Simulation
         public GlobalPosition Player;
         public float Yaw, Pitch;
         public long Tick;
-        public int BuildingGenerator, InteriorFloor;
+        public int BuildingGenerator, PopulationGenerator, InteriorFloor;
         public string InteriorId, InventoryFingerprint;
         public string[] OpenDoors;
         public InventoryDelta Inventory;
+        public ResidentSnapshot[] Residents;
+        public AcquaintanceSnapshot[] Acquaintances;
+        public float Hunger, Thirst;
     }
 
-    public enum DoorActionResult { Applied, UnknownTarget, OutOfReach, Obstructed }
+    public enum DoorActionResult { Applied, UnknownTarget, OutOfReach, Obstructed, AlreadyInState }
 
     public sealed class RegionSession
     {
-        public const int SnapshotVersion = 3;
+        public const int SnapshotVersion = 4;
+        private const int InteriorSnapshotVersion = 3;
         private const int LegacySnapshotVersion = 2;
         private readonly RegionWorld world;
         private readonly IInventoryCapacityProvider capacity;
-        private readonly Inventory inventory;
-        private readonly string inventoryFingerprint;
+        private readonly Inventory inventory, legacyInventory;
+        private readonly string inventoryFingerprint, legacyFingerprint;
+        private readonly Population population;
+        private readonly ResidentSocial social = new ResidentSocial();
         private GlobalPosition player;
 
         public RegionSession(RegionWorld world, GeoPoint spawn, float yaw, NeighborhoodCatalog catalog = null,
-            IInventoryCapacityProvider capacity = null)
+            IInventoryCapacityProvider capacity = null, bool enableResidents = true, int residentsPerHome = 3)
         {
+            if (residentsPerHome < 1 || residentsPerHome > 4) throw new ArgumentOutOfRangeException(nameof(residentsPerHome));
             this.world = world;
             this.capacity = capacity;
             Buildings = new Buildings(world);
-            inventory = RegionInventory.Create(Buildings, catalog);
-            inventoryFingerprint = RegionInventory.Fingerprint(catalog);
+            legacyInventory = RegionInventory.Create(Buildings, catalog);
+            legacyFingerprint = RegionInventory.Fingerprint(catalog);
+            population = new Population(world, Buildings, enableResidents, residentsPerHome);
+            inventory = RegionInventory.Create(Buildings, catalog, population.InventoryIds);
+            inventoryFingerprint = RegionInventory.Fingerprint(catalog, includeProvisions: true);
             if (!world.IsSafeStart(spawn) || !world.TryGround(spawn, out var ground) ||
                 !SetPlayerPose(new LocalPoint(spawn.X, ground + 0.08, spawn.Z), yaw, 0))
                 throw new ArgumentException("Invalid region spawn.");
@@ -64,7 +79,29 @@ namespace RealLife.Simulation
         public float Pitch { get; private set; }
         public long Tick { get; private set; }
         public int MinuteOfDay => SimulationTime.MinuteOfDay(Tick);
-        public void AdvanceTick() => Tick = SimulationTime.Advance(Tick);
+        public long Day => SimulationTime.Day(Tick);
+        public float Hunger { get; private set; }
+        public float Thirst { get; private set; }
+        public int PresentationRevision { get; private set; }
+        public IReadOnlyList<ResidentViewData> Residents => population.Actors.Views;
+
+        public void AdvanceTick(Func<string, LocalPoint, LocalPoint, bool> stepAllowed = null)
+        {
+            var previous = Tick;
+            Tick = SimulationTime.Advance(Tick);
+            if (Tick == previous) return;
+            if (Day != SimulationTime.Day(previous))
+            {
+                RegionInventory.Restock(inventory, Day, capacity);
+                Changed();
+            }
+            if (Tick % SimulationTime.TicksPerSecond == 0)
+            {
+                Hunger = Math.Min(1, Hunger + .00082f);
+                Thirst = Math.Min(1, Thirst + .0011f);
+            }
+            population.Step(this, stepAllowed);
+        }
 
         public bool SetPlayerPose(LocalPoint position, float yaw, float pitch)
         {
@@ -77,24 +114,99 @@ namespace RealLife.Simulation
 
         public InventoryContainerView GetInventory(string id) => inventory.GetContainer(id, capacity);
 
-        public bool CanUseAnchor(string id) => Buildings.TryGetAnchor(id, out var anchor) &&
-            (InReach(anchor.Position) || InReach(anchor.ContainerPosition));
+        public bool CanUseAnchor(string id) => CanUseAnchor(PlayerActor(), id);
 
         public InventoryMoveResult MoveItems(InventoryMove command, string focusedAnchorId)
-            => inventory.Move(command, Access(focusedAnchorId), capacity);
+            => MoveItems(PlayerInventoryId, command, focusedAnchorId);
+
+        public InventoryMoveResult MoveItems(string actorId, InventoryMove command, string focusedAnchorId)
+        {
+            if (!TryActor(actorId, out var actor)) return new InventoryMoveResult(InventoryMoveFailure.Inaccessible);
+            var result = inventory.Move(command, Access(actor, focusedAnchorId), capacity);
+            if (result.Succeeded) Changed();
+            return result;
+        }
 
         public InventoryMoveFailure CheckMove(InventoryMove command, string focusedAnchorId)
-            => inventory.CheckMove(command, Access(focusedAnchorId), capacity);
+            => inventory.CheckMove(command, Access(PlayerActor(), focusedAnchorId), capacity);
 
-        private RegionInventoryAccess Access(string anchor) => new RegionInventoryAccess(CanUseAnchor(anchor) ? anchor : null);
-
-        public DoorActionResult ToggleDoor(string id)
+        public InventoryUseResult UseItem(InventoryUse command, string focusedAnchorId = null)
         {
-            if (!Buildings.TryGetDoor(id, out var door)) return DoorActionResult.UnknownTarget;
-            var feet = PlayerLocal;
-            if (!InReach(door.GetAim(Buildings.IsDoorOpen(id)))) return DoorActionResult.OutOfReach;
-            if (door.ContainsSwing(feet)) return DoorActionResult.Obstructed;
-            return Buildings.TryToggleDoor(id, out _) ? DoorActionResult.Applied : DoorActionResult.UnknownTarget;
+            if (command.ActionTick != Tick) return new InventoryUseResult(InventoryUseFailure.InvalidAction);
+            if (!TryActor(command.ActorId, out var actor)) return new InventoryUseResult(InventoryUseFailure.Inaccessible);
+            var result = inventory.Consume(command, Access(actor, focusedAnchorId));
+            if (!result.Succeeded) return result;
+            const float relief = .48f;
+            if (actor.Person == null)
+            {
+                if (result.Kind == InventoryUseKind.Food) Hunger = Math.Max(0, Hunger - relief);
+                else Thirst = Math.Max(0, Thirst - relief);
+            }
+            else
+            {
+                if (result.Kind == InventoryUseKind.Food) actor.Person.Hunger = Math.Max(0, actor.Person.Hunger - relief);
+                else actor.Person.Thirst = Math.Max(0, actor.Person.Thirst - relief);
+                if (actor.Person.Uses < int.MaxValue) actor.Person.Uses++;
+            }
+            Changed();
+            return result;
+        }
+
+        private bool CanUseAnchor(ActorContext actor, string id)
+        {
+            if (!Buildings.TryGetAnchor(id, out var anchor)) return false;
+            if (actor.Person != null &&
+                (actor.RoomId != anchor.RoomId || anchor.BuildingId != actor.Person.HomeId &&
+                    (!Buildings.TryGet(anchor.BuildingId, out var plan) || plan.Kind != BuildingKind.PublicPremises)))
+                return false;
+            return InReach(actor.Feet, anchor.Position) || InReach(actor.Feet, anchor.ContainerPosition);
+        }
+
+        private RegionInventoryAccess Access(ActorContext actor, string anchor) =>
+            new RegionInventoryAccess(actor.Id, CanUseAnchor(actor, anchor) ? anchor : null);
+
+        public DoorActionResult ToggleDoor(string id) => SetDoor(PlayerInventoryId, id, !Buildings.IsDoorOpen(id));
+
+        public DoorActionResult SetDoor(string actorId, string id, bool open)
+        {
+            if (!Buildings.TryGetDoor(id, out var door) || !TryActor(actorId, out var actor))
+                return DoorActionResult.UnknownTarget;
+            var wasOpen = Buildings.IsDoorOpen(id);
+            if (wasOpen == open) return DoorActionResult.AlreadyInState;
+            if (!InReach(actor.Feet, door.GetAim(wasOpen))) return DoorActionResult.OutOfReach;
+            if (door.ContainsSwing(PlayerLocal)) return DoorActionResult.Obstructed;
+            foreach (var person in population.Actors.People)
+                if (door.ContainsSwing(person.Position)) return DoorActionResult.Obstructed;
+            if (!Buildings.TryToggleDoor(id, out _)) return DoorActionResult.UnknownTarget;
+            Changed();
+            return DoorActionResult.Applied;
+        }
+
+        public ConversationResult Talk(string residentId, ConversationTopic topic)
+        {
+            var person = population.Actors.Find(residentId);
+            if (person == null || Population.DistanceSquared(person.Position, PlayerLocal) > 3.2 * 3.2 ||
+                Math.Abs(person.Position.Y - PlayerLocal.Y) >= 1.15)
+                return new ConversationResult(false, "Подойдите ближе, чтобы поговорить.");
+            foreach (var view in Residents)
+                if (view.Id == residentId) return social.Talk(person, view, topic, Tick);
+            return default;
+        }
+
+        private void Changed() => PresentationRevision = unchecked(PresentationRevision + 1);
+
+        private ActorContext PlayerActor() => new ActorContext(PlayerInventoryId, PlayerLocal, null, null);
+
+        private bool TryActor(string id, out ActorContext actor)
+        {
+            if (id == PlayerInventoryId)
+            {
+                actor = PlayerActor();
+                return true;
+            }
+            var person = population.Actors.Find(id);
+            actor = person == null ? default : new ActorContext(person.Id, person.Position, person, population.RoomOf(person));
+            return person != null;
         }
 
         public RegionSnapshot Capture()
@@ -108,17 +220,26 @@ namespace RealLife.Simulation
                 Version = SnapshotVersion, WorldId = WorldId, PackageId = world.PackageId,
                 PackageFormat = RegionWorld.PackageFormat, PackageRevision = world.Revision, Player = player,
                 Yaw = Yaw, Pitch = Pitch, Tick = Tick, BuildingGenerator = Buildings.GeneratorVersion,
+                PopulationGenerator = Population.GeneratorVersion,
                 InteriorId = interior?.Id, InteriorFloor = floor, OpenDoors = Buildings.CaptureOpenDoors(),
-                InventoryFingerprint = inventoryFingerprint,
-                Inventory = inventory.Capture()
+                InventoryFingerprint = inventoryFingerprint, Inventory = inventory.Capture(),
+                Residents = population.Capture(), Acquaintances = social.Capture(), Hunger = Hunger, Thirst = Thirst
             };
         }
 
         public bool Matches(RegionSnapshot snapshot) => snapshot != null &&
-            (snapshot.Version == LegacySnapshotVersion || snapshot.Version == SnapshotVersion &&
-                snapshot.BuildingGenerator == Buildings.GeneratorVersion && snapshot.InventoryFingerprint == inventoryFingerprint) &&
             snapshot.WorldId == WorldId && snapshot.PackageId == world.PackageId &&
-            snapshot.PackageFormat == RegionWorld.PackageFormat && snapshot.PackageRevision == world.Revision;
+            snapshot.PackageFormat == RegionWorld.PackageFormat && snapshot.PackageRevision == world.Revision &&
+            (snapshot.Version switch
+            {
+                LegacySnapshotVersion => true,
+                InteriorSnapshotVersion => snapshot.BuildingGenerator == Buildings.GeneratorVersion &&
+                    snapshot.InventoryFingerprint == legacyFingerprint,
+                SnapshotVersion => snapshot.BuildingGenerator == Buildings.GeneratorVersion &&
+                    snapshot.PopulationGenerator == Population.GeneratorVersion &&
+                    snapshot.InventoryFingerprint == inventoryFingerprint,
+                _ => false
+            });
 
         public bool CanRestore(RegionSnapshot snapshot) => TryGetRestorePosition(snapshot, out _);
 
@@ -139,7 +260,7 @@ namespace RealLife.Simulation
                 return Buildings.IsPoseClearOfDoors(position, Array.Empty<string>());
             }
 
-            if (!Buildings.ValidateOpenDoors(snapshot.OpenDoors) || !inventory.CanRestore(snapshot.Inventory) ||
+            if (!Buildings.ValidateOpenDoors(snapshot.OpenDoors) || !CanRestoreContents(snapshot) ||
                 !Buildings.IsPoseClearOfDoors(position, snapshot.OpenDoors)) return false;
             if (string.IsNullOrEmpty(snapshot.InteriorId))
                 return snapshot.InteriorFloor == 0 && ValidOutdoorPose(position, flat, legacy: false);
@@ -147,16 +268,62 @@ namespace RealLife.Simulation
                 plan.TryLocate(position, true, out var floor) && floor == snapshot.InteriorFloor;
         }
 
+        private bool CanRestoreContents(RegionSnapshot snapshot)
+        {
+            if (snapshot.Version == InteriorSnapshotVersion && !legacyInventory.CanRestore(snapshot.Inventory, 0, 0))
+                return false;
+            if (!inventory.CanRestore(snapshot.Inventory, snapshot.Tick, SimulationTime.Day(snapshot.Tick)))
+                return false;
+            if (snapshot.Version == InteriorSnapshotVersion) return true;
+
+            return snapshot.Inventory.Uses != null && snapshot.Inventory.Deliveries != null &&
+                WorldFrame.IsFinite(snapshot.Hunger) && snapshot.Hunger >= 0 && snapshot.Hunger <= 1 &&
+                WorldFrame.IsFinite(snapshot.Thirst) && snapshot.Thirst >= 0 && snapshot.Thirst <= 1 &&
+                ResidentSocial.CanRestore(snapshot.Acquaintances, population.Actors, snapshot.Tick) &&
+                population.CanRestore(snapshot.Residents, Buildings, snapshot.OpenDoors, snapshot.Tick) &&
+                ConsumptionMatches(snapshot.Residents, snapshot.Inventory.Uses);
+        }
+
+        private static bool ConsumptionMatches(ResidentSnapshot[] people, InventoryUseDelta[] ledger)
+        {
+            var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var entry in ledger)
+            {
+                counts.TryGetValue(entry.ActorId, out var prior);
+                counts[entry.ActorId] = prior + (int)Math.Min(int.MaxValue - prior, entry.Quantity);
+            }
+            foreach (var person in people)
+            {
+                counts.TryGetValue(person.Id, out var count);
+                if (person.Uses != count) return false;
+            }
+            return true;
+        }
+
         public bool Restore(RegionSnapshot snapshot)
         {
             if (!TryGetRestorePosition(snapshot, out var position)) return false;
-            Buildings.RestoreOpenDoors(snapshot.Version == LegacySnapshotVersion ? Array.Empty<string>() : snapshot.OpenDoors);
-            inventory.Restore(snapshot.Version == LegacySnapshotVersion ? new InventoryDelta() : snapshot.Inventory);
-            player = snapshot.Version == LegacySnapshotVersion && position.Y != world.Frame.ToLocal(snapshot.Player).Y
+            var oldOutdoor = snapshot.Version == LegacySnapshotVersion;
+            Buildings.RestoreOpenDoors(oldOutdoor ? Array.Empty<string>() : snapshot.OpenDoors);
+            inventory.Restore(oldOutdoor ? new InventoryDelta() : snapshot.Inventory, snapshot.Tick, SimulationTime.Day(snapshot.Tick));
+            player = oldOutdoor && position.Y != world.Frame.ToLocal(snapshot.Player).Y
                 ? world.Frame.ToGlobal(position) : snapshot.Player;
             Yaw = snapshot.Yaw;
             Pitch = snapshot.Pitch;
             Tick = snapshot.Tick;
+            if (snapshot.Version == SnapshotVersion)
+            {
+                population.Restore(snapshot.Residents);
+                social.Restore(snapshot.Acquaintances);
+                (Hunger, Thirst) = (snapshot.Hunger, snapshot.Thirst);
+            }
+            else
+            {
+                population.Reset(Tick);
+                social.Restore(null);
+                (Hunger, Thirst) = (0, 0);
+            }
+            Changed();
             return true;
         }
 
@@ -196,22 +363,31 @@ namespace RealLife.Simulation
             return false;
         }
 
-        private bool InReach(LocalPoint target)
+        private static bool InReach(LocalPoint feet, LocalPoint target)
         {
-            var p = PlayerLocal;
-            var dx = target.X - p.X;
-            var dy = target.Y - p.Y - 1.63;
-            var dz = target.Z - p.Z;
+            var dx = target.X - feet.X;
+            var dy = target.Y - feet.Y - 1.63;
+            var dz = target.Z - feet.Z;
             return dx * dx + dy * dy + dz * dz <= 2.8 * 2.8;
+        }
+
+        private readonly struct ActorContext
+        {
+            public readonly string Id, RoomId;
+            public readonly LocalPoint Feet;
+            public readonly Resident Person;
+
+            public ActorContext(string id, LocalPoint feet, Resident person, string roomId) =>
+                (Id, Feet, Person, RoomId) = (id, feet, person, roomId);
         }
 
         private sealed class RegionInventoryAccess : IInventoryAccess
         {
-            private readonly string anchor;
+            private readonly string actor, anchor;
 
-            public RegionInventoryAccess(string anchor) => this.anchor = anchor;
+            public RegionInventoryAccess(string actor, string anchor) => (this.actor, this.anchor) = (actor, anchor);
 
-            public bool CanAccess(string id) => id == RegionInventory.PlayerId || anchor != null && id == anchor;
+            public bool CanAccess(string id) => id == actor || anchor != null && id == anchor;
         }
     }
 }

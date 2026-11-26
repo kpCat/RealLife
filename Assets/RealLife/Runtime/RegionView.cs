@@ -38,6 +38,8 @@ namespace RealLife.Runtime
             loaded.TryGetValue(key, out var chunk) && chunk.BuildingIds.Contains(id);
 
         public bool IsInteriorLoaded(string buildingId) => interiors.ContainsKey(buildingId);
+        public bool IsApproachLoaded(string buildingId) =>
+            buildings.TryGet(buildingId, out var plan) && HasBuilding(plan.Owner, plan.Id);
 
         public void Prepare(LocalPoint position)
         {
@@ -192,11 +194,12 @@ namespace RealLife.Runtime
             foreach (var road in data.Roads) AddRoad(detail, road);
             foreach (var building in data.Buildings)
             {
-                if (buildings.TryGet(building.Id, out _))
+                if (buildings.TryGet(building.Id, out var plan))
                 {
                     var exterior = new MeshBuffer();
                     var solid = new MeshBuffer();
                     AddBuilding(exterior, solid, building);
+                    AddProxyRamp(exterior, solid, plan);
                     cell.AddProxy(building.Id, exterior, solid, palette);
                     cell.SetProxy(building.Id, !interiors.ContainsKey(building.Id));
                 }
@@ -348,6 +351,23 @@ namespace RealLife.Runtime
             var tri = building.Triangles;
             for (var i = 0; i < tri.Length; i += 3)
                 detail.Triangle(roof, At(ground[tri[i]], top), At(ground[tri[i + 1]], top), At(ground[tri[i + 2]], top));
+        }
+
+        private static void AddProxyRamp(MeshBuffer detail, MeshBuffer collision, BuildingPlan plan)
+        {
+            var half = BuildingView.EntryRampWidth / 2;
+            var landing = plan.LandingGround - plan.GroundFloor;
+            var frontLeft = FirstPersonMotor.ToVector(plan.ToWorld(-half, landing, -BuildingPlan.EntryRun));
+            var frontRight = FirstPersonMotor.ToVector(plan.ToWorld(half, landing, -BuildingPlan.EntryRun));
+            var backLeft = FirstPersonMotor.ToVector(plan.ToWorld(-half, 0, 0));
+            var backRight = FirstPersonMotor.ToVector(plan.ToWorld(half, 0, 0));
+            var drop = -Vector3.Cross(backLeft - frontLeft, frontRight - frontLeft).normalized *
+                (float)BuildingStairs.RampThickness;
+            detail.Quad(Tone.Paving, frontLeft, backLeft, backRight, frontRight);
+            detail.Quad(Tone.Paving, frontLeft + drop, backLeft + drop, backLeft, frontLeft);
+            detail.Quad(Tone.Paving, backRight + drop, frontRight + drop, frontRight, backRight);
+            detail.Quad(Tone.Paving, frontRight + drop, frontLeft + drop, frontLeft, frontRight);
+            collision.Quad(Tone.Paving, frontLeft, backLeft, backRight, frontRight);
         }
 
         private static float GableRise(Vector3[] footprint, float height, double signedArea, out int first)

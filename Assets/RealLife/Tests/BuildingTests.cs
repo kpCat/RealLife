@@ -8,6 +8,62 @@ namespace RealLife.Tests
     public sealed class BuildingTests
     {
         [Test]
+        public void ResidentRouteCrossesRealDoorsAndStairsToAReachableBedroom()
+        {
+            var world = Fixture();
+            var buildings = new Buildings(world);
+            var house = buildings.Plans.Single(plan => plan.Kind == BuildingKind.TwoStoreyHouse);
+            var navigation = new ResidentNavigation(world, buildings);
+            Assert.That(navigation.TryOutside(house.Id, 0, out var outside), Is.True);
+            Assert.That(navigation.TryRest(house.Id, 0, out var bedroom), Is.True);
+            Assert.That(navigation.TryRoute(outside, bedroom, out var route), Is.True);
+            Assert.That(navigation.GetNode(bedroom).Position.Y, Is.EqualTo(house.GroundFloor + BuildingPlan.StoreyHeight).Within(.04));
+            Assert.That(navigation.GetNode(bedroom).RoomId, Does.Contain("upper"));
+            var traversedDoors = 0;
+            for (var i = 1; i < route.Length; i++)
+            {
+                Assert.That(navigation.TryStep(route[i - 1], route[i], out var step), Is.True);
+                if (step.DoorId != null) traversedDoors++;
+                var midpoint = navigation.Position(route[i - 1], route[i], .5);
+                Assert.That(midpoint.IsFinite, Is.True);
+                if (navigation.BuildingAt(route[i - 1], route[i], .5) != null)
+                    Assert.That(house.TryLocate(midpoint, false, out _), Is.True);
+            }
+            Assert.That(traversedDoors, Is.GreaterThanOrEqualTo(2));
+            Assert.That(navigation.TryRoute(bedroom, outside, out _), Is.True);
+        }
+
+        [Test]
+        public void ResidentRoutesJoinRoadSpansAndRejectUnconnectedNeighborhoods()
+        {
+            var world = Fixture(connectRoads: true);
+            var buildings = new Buildings(world);
+            var navigation = new ResidentNavigation(world, buildings);
+            var single = buildings.Plans.Single(plan => plan.Kind == BuildingKind.SingleStoreyHouse);
+            var twoStorey = buildings.Plans.Single(plan => plan.Kind == BuildingKind.TwoStoreyHouse);
+            var shop = buildings.Plans.Single(plan => plan.Kind == BuildingKind.PublicPremises);
+            Assert.That(navigation.TryOutside(single.Id, 0, out var from), Is.True);
+            Assert.That(navigation.TryOutside(twoStorey.Id, 0, out var to), Is.True);
+            var approach = navigation.GetNode(from).Position;
+            Assert.That(navigation.TryFindOutdoor(new GeoPoint(approach.X, approach.Z), 1, out var linked), Is.True);
+            Assert.That(linked, Is.EqualTo(from));
+            Assert.That(navigation.TryOutside(shop.Id, 0, out var disconnected), Is.True);
+            Assert.That(navigation.TryWork(shop.Id, 0, out var station), Is.True);
+            Assert.That(navigation.TryWork(shop.Id, 1, out var secondStation), Is.True);
+            Assert.That(station, Is.Not.EqualTo(secondStation));
+            Assert.That(navigation.TryRoute(disconnected, station, out _), Is.True);
+            Assert.That(navigation.TryRoute(from, to, out var route), Is.True);
+            Assert.That(navigation.TryRoute(from, disconnected, out _), Is.False);
+            Assert.That(route.Length, Is.GreaterThan(4));
+            for (var i = 1; i < route.Length; i++)
+            {
+                var point = navigation.Position(route[i - 1], route[i], .5);
+                Assert.That(world.TryGround(new GeoPoint(point.X, point.Z), out var ground), Is.True);
+                Assert.That(point.Y, Is.EqualTo(ground).Within(.14));
+            }
+        }
+
+        [Test]
         public void LegacyPoseUnderNewEntryRampPreservesHorizontalLocationAndUsesNewSupport()
         {
             var world = Fixture();
@@ -98,7 +154,7 @@ namespace RealLife.Tests
             Assert.That(buildings.IsPoseClearOfDoors(plan.ToWorld(0, 0, -.31), Array.Empty<string>()), Is.True);
         }
 
-        private static RegionWorld Fixture()
+        internal static RegionWorld Fixture(bool connectRoads = false)
         {
             const int level = 16, center = 32768;
             var frame = new WorldFrame(0, 0, 0);
@@ -127,6 +183,13 @@ namespace RealLife.Tests
                         Footprint = ends, Triangles = new[] { 0, 1, 2, 0, 2, 3 } } }
                 };
             }
+            var chunks = new[] { Chunk(0, 6.9, 7.1, 3.4f), Chunk(1, 10, 12, 6.3f), Chunk(2, 11, 10, 3.4f),
+                Chunk(3, 11, 10, 3.4f, false) };
+            if (connectRoads)
+                chunks[0].Roads = new[] { chunks[0].Roads[0], new RoadSpan
+                {
+                    Id = "way:connector", Width = 4, A = chunks[0].Roads[0].B, B = chunks[1].Roads[0].A
+                } };
             return new RegionWorld(new RegionDefinition
             {
                 Format = 1, GridVersion = 1, Level = level, MinX = center, MinY = center,
@@ -134,8 +197,7 @@ namespace RealLife.Tests
                 Title = "Buildings fixture", Revision = "r1",
                 Outline = new[] { Point(Key(0), 0, 0), Point(Key(3), 1, 0), Point(Key(3), 1, 1), Point(Key(0), 0, 1) },
                 Route = new[] { Point(Key(0), .45, .35), Point(Key(3), .45, .35) },
-                Chunks = new[] { Chunk(0, 6.9, 7.1, 3.4f), Chunk(1, 10, 12, 6.3f), Chunk(2, 11, 10, 3.4f),
-                    Chunk(3, 11, 10, 3.4f, false) },
+                Chunks = chunks,
                 Sources = new[] { new RegionSource(), new RegionSource(), new RegionSource() }
             });
         }

@@ -12,6 +12,8 @@ namespace RealLife.Tests
         private const string Anchor = "outside:bench";
         private const string Books = "world:books";
         private const string OtherBooks = "world:other-books";
+        private const string Food = "test:food.meal";
+        private const string Stock = "world:meals";
 
         [Test]
         public void TransferChecksAccessAndMergesOnlyCompatibleStacksWithinTheirLimit()
@@ -149,6 +151,71 @@ namespace RealLife.Tests
             Assert.That(restored.GetContainer(Cupboard).Stacks[0].Quantity, Is.EqualTo(2));
         }
 
+        [Test]
+        public void ConsumptionValidatesActorAccessAndPreservesTheLedgerAcrossRestore()
+        {
+            var inventory = CreateFoodInventory();
+            var access = new Access();
+            var moved = inventory.Move(new InventoryMove(Cupboard, Stock, 2, Resident), access);
+            var use = new InventoryUse(Resident, Resident, moved.InstanceId, 12);
+            access.Closed = Resident;
+            Assert.That(inventory.Consume(use, access).Failure, Is.EqualTo(InventoryUseFailure.Inaccessible));
+            Assert.That(inventory.GetContainer(Resident).Stacks[0].Quantity, Is.EqualTo(2));
+
+            access.Closed = null;
+            Assert.That(inventory.Consume(use, access).Kind, Is.EqualTo(InventoryUseKind.Food));
+            Assert.That(inventory.GetContainer(Resident).Stacks[0].Quantity, Is.EqualTo(1));
+            var save = inventory.Capture();
+            var restored = CreateFoodInventory();
+            Assert.That(restored.Restore(save, currentTick: 11, currentDay: 0), Is.False);
+            Assert.That(restored.Restore(save, currentTick: 12, currentDay: 0), Is.True);
+            Assert.That(restored.Consume(use, access).Failure, Is.EqualTo(InventoryUseFailure.DuplicateAction));
+            Assert.That(restored.GetContainer(Resident).Stacks[0].Quantity, Is.EqualTo(1));
+            Assert.That(restored.GetContainer(Cupboard).Stacks[0].Quantity, Is.EqualTo(1));
+
+            save.Uses[0].Quantity++;
+            Assert.That(restored.Restore(save), Is.False);
+            Assert.That(restored.GetContainer(Resident).Stacks[0].Quantity, Is.EqualTo(1));
+            Assert.That(restored.Consume(new InventoryUse(Player, Cupboard, Stock, 13), access).Succeeded, Is.True);
+            Assert.That(restored.GetContainer(Cupboard).Stacks, Is.Empty);
+            Assert.That(CreateFoodInventory().Restore(restored.Capture()), Is.True);
+        }
+
+        [Test]
+        public void DailyDeliveryCannotDuplicateMovedStackOrRepeatAfterRestore()
+        {
+            var inventory = CreateFoodInventory();
+            var access = new Access();
+            var moved = inventory.Move(new InventoryMove(Cupboard, Stock, 3, Resident), access);
+            Assert.That(moved.InstanceId, Is.EqualTo(Stock));
+            var delivery = inventory.DeliverDaily(Stock, 1);
+            Assert.That(delivery, Is.EqualTo(2));
+            var shelf = inventory.GetContainer(Cupboard).Stacks[0];
+            Assert.That(shelf.InstanceId, Is.Not.EqualTo(Stock));
+            Assert.That(shelf.OriginId, Is.EqualTo(Stock));
+            Assert.That(inventory.DeliverDaily(Stock, 1), Is.Zero);
+
+            var save = inventory.Capture();
+            var restored = CreateFoodInventory();
+            Assert.That(restored.Restore(save, currentTick: 0, currentDay: 0), Is.False);
+            Assert.That(restored.Restore(save, currentTick: 0, currentDay: 1), Is.True);
+            Assert.That(restored.DeliverDaily(Stock, 1), Is.Zero);
+            Assert.That(restored.DeliverDaily(Stock, 2), Is.EqualTo(1));
+            Assert.That(restored.GetContainer(Cupboard).Stacks[0].Quantity, Is.EqualTo(3));
+            Assert.That(restored.GetContainer(Resident).Stacks[0].Quantity, Is.EqualTo(3));
+
+            save.Deliveries[0].Quantity++;
+            Assert.That(restored.Restore(save), Is.False);
+            Assert.That(restored.GetContainer(Cupboard).Stacks[0].Quantity, Is.EqualTo(3));
+        }
+
+        private static Inventory CreateFoodInventory() => new Inventory(
+            new[] { new InventoryItemDefinition { DefinitionId = Food, DisplayName = "Обед",
+                Category = "Еда", UnitWeightGrams = 200, MaxStack = 3, UseKind = InventoryUseKind.Food } },
+            new[] { Container(Player), Container(Resident), Container(Cupboard) },
+            new[] { new InventorySeed { InstanceId = Stock, DefinitionId = Food, ContainerId = Cupboard, Quantity = 3 } },
+            new[] { new InventoryDailySupply { OriginId = Stock, DailyLimit = 2, TargetQuantity = 3 } });
+
         private static Inventory CreateInventory() => new Inventory(
             new[] { new InventoryItemDefinition { DefinitionId = "test:book.paperback", DisplayName = "Книга",
                 Category = "Книги", UnitWeightGrams = 100, MaxStack = 8 } },
@@ -164,7 +231,7 @@ namespace RealLife.Tests
             });
 
         private static InventoryContainerDefinition Container(string id) =>
-            new InventoryContainerDefinition { ContainerId = id, DisplayName = id };
+            new InventoryContainerDefinition { ContainerId = id, DisplayName = id, ActorInventory = id == Player || id == Resident };
 
         private static InventorySeed Seed(string id, string container, int quantity, string variantId = null) =>
             new InventorySeed { InstanceId = id, DefinitionId = "test:book.paperback", ContainerId = container,

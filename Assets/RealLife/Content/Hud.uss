@@ -238,3 +238,39 @@
 
 .inventory-button:disabled { opacity: 0.55; }
 .inventory-place { align-self: flex-start; max-width: 100%; white-space: normal; }
+
+.conversation-overlay {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 0 24px 68px;
+    background-color: rgba(18, 23, 20, 0.16);
+}
+
+.conversation-card {
+    width: 620px;
+    max-width: 100%;
+    padding: 16px 19px;
+    border-top-width: 3px;
+    border-top-color: rgb(218, 173, 96);
+    color: rgb(244, 241, 230);
+    background-color: rgb(35, 44, 38);
+}
+
+.conversation-speaker {
+    margin: 0;
+    font-size: 21px;
+    -unity-font-style: bold;
+}
+
+.conversation-answer {
+    margin: 6px 0 10px;
+    font-size: 17px;
+    white-space: normal;
+}
+
+.conversation-options { flex-direction: row; flex-wrap: wrap; }

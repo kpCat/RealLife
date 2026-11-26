@@ -12,6 +12,7 @@ namespace RealLife.Simulation
         public string Appearance;
         public int UnitWeightGrams;
         public int MaxStack;
+        public InventoryUseKind UseKind;
     }
 
     [Serializable]
@@ -22,6 +23,7 @@ namespace RealLife.Simulation
         public int MaxSlots = InventoryCapacity.Unlimited;
         public long MaxWeightGrams = InventoryCapacity.Unlimited;
         public bool SingleStack;
+        public bool ActorInventory;
     }
 
     [Serializable]
@@ -32,6 +34,13 @@ namespace RealLife.Simulation
         public string ContainerId;
         public int Quantity;
         public string VariantId;
+    }
+
+    public sealed class InventoryDailySupply
+    {
+        public string OriginId;
+        public int DailyLimit;
+        public int TargetQuantity;
     }
 
     public readonly struct InventoryCapacity
@@ -89,6 +98,34 @@ namespace RealLife.Simulation
             (Failure, InstanceId) = (failure, instanceId);
     }
 
+    public enum InventoryUseKind { None, Food, Drink }
+
+    public readonly struct InventoryUse
+    {
+        public string ActorId { get; }
+        public string ContainerId { get; }
+        public string InstanceId { get; }
+        public long ActionTick { get; }
+
+        public InventoryUse(string actorId, string containerId, string instanceId, long actionTick) =>
+            (ActorId, ContainerId, InstanceId, ActionTick) = (actorId, containerId, instanceId, actionTick);
+    }
+
+    public enum InventoryUseFailure
+    {
+        None, UnknownContainer, Inaccessible, UnknownStack, NotConsumable, InvalidAction, DuplicateAction, QuantityLimit
+    }
+
+    public readonly struct InventoryUseResult
+    {
+        public bool Succeeded => Kind != InventoryUseKind.None;
+        public InventoryUseFailure Failure { get; }
+        public InventoryUseKind Kind { get; }
+
+        internal InventoryUseResult(InventoryUseFailure failure, InventoryUseKind kind = InventoryUseKind.None) =>
+            (Failure, Kind) = (failure, kind);
+    }
+
     public readonly struct InventoryStackView
     {
         public string InstanceId { get; }
@@ -100,6 +137,7 @@ namespace RealLife.Simulation
         public int Quantity { get; }
         public int MaxStack { get; }
         public string VariantId { get; }
+        public InventoryUseKind UseKind { get; }
 
         internal InventoryStackView(string instanceId, string originId, InventoryItemDefinition definition,
             int quantity, string variantId)
@@ -108,6 +146,7 @@ namespace RealLife.Simulation
                 (instanceId, originId, definition.DefinitionId, definition.DisplayName, definition.Category);
             (Quantity, MaxStack, VariantId) = (quantity, definition.MaxStack, variantId);
             Appearance = definition.Appearance;
+            UseKind = definition.UseKind;
         }
     }
 
@@ -130,14 +169,31 @@ namespace RealLife.Simulation
     {
         public long NextSplitId = 1;
         public InventoryStackDelta[] Stacks = Array.Empty<InventoryStackDelta>();
+        public InventoryUseDelta[] Uses = Array.Empty<InventoryUseDelta>();
+        public InventoryDeliveryDelta[] Deliveries = Array.Empty<InventoryDeliveryDelta>();
     }
 
     [Serializable]
     public sealed class InventoryStackDelta
     {
-        // Zero quantity and no container represent a consumed base stack.
+        // Zero quantity and no container mean that the base instance has no placement.
         public string InstanceId;
         public string ContainerId;
         public int Quantity;
+    }
+
+    [Serializable]
+    public sealed class InventoryUseDelta
+    {
+        public string ActorId, DefinitionId, VariantId;
+        public long LastTick, Quantity;
+        public InventoryUseKind Kind;
+    }
+
+    [Serializable]
+    public sealed class InventoryDeliveryDelta
+    {
+        public string OriginId;
+        public long LastDay, Quantity;
     }
 }

@@ -8,6 +8,10 @@
     { "DefinitionId": "core:item.tea", "DisplayName": "Пачка чая", "Category": "Продукты", "Appearance": "carton", "UnitWeightGrams": 100, "MaxStack": 12 },
     { "DefinitionId": "core:item.tin", "DisplayName": "Банка фасоли", "Category": "Продукты", "Appearance": "tin", "UnitWeightGrams": 420, "MaxStack": 8 }
   ],
+  "Provisions": [
+    { "DefinitionId": "core:item.meal", "DisplayName": "Лепёшка с сыром", "Category": "Продукты", "Appearance": "carton", "UnitWeightGrams": 150, "MaxStack": 32, "UseKind": 1 },
+    { "DefinitionId": "core:item.water", "DisplayName": "Питьевая вода", "Category": "Напитки", "Appearance": "tin", "UnitWeightGrams": 270, "MaxStack": 32, "UseKind": 2 }
+  ],
   "Furnishings": [
     { "RoomRole": "Kitchen", "DefinitionId": "core:item.cup", "VariantId": "cream", "Quantity": 3 },
     { "RoomRole": "Kitchen", "DefinitionId": "core:item.plate", "VariantId": "cream", "Quantity": 3 },
