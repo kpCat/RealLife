@@ -187,15 +187,17 @@ namespace RealLife.Runtime
     internal sealed class RegionMap : VisualElement
     {
         private readonly RegionWorld world;
+        private readonly IReadOnlyList<BuildingPlan> accessPlans;
         private readonly Action<GeoPoint> choose;
         private readonly Vector2 min, max;
         private Vector2 pan;
         private float zoom = 1;
         public GeoPoint Selection { get; set; }
 
-        public RegionMap(RegionWorld world, GeoPoint selection, Action<GeoPoint> choose)
+        public RegionMap(RegionWorld world, IReadOnlyList<BuildingPlan> accessPlans, GeoPoint selection, Action<GeoPoint> choose)
         {
             this.world = world;
+            this.accessPlans = accessPlans;
             this.choose = choose;
             Selection = selection;
             min = max = Flat(world.Outline[0]);
@@ -274,6 +276,18 @@ namespace RealLife.Runtime
             painter.lineWidth = 2;
             painter.strokeColor = new Color32(221, 177, 107, 255);
             painter.Stroke();
+
+            foreach (var plan in accessPlans)
+            {
+                var marker = Project(new GeoPoint(plan.Entrance.X, plan.Entrance.Z));
+                if (!viewport.Contains(marker)) continue;
+                painter.BeginPath();
+                painter.Arc(marker, 4.5f, 0, 360);
+                painter.ClosePath();
+                painter.fillColor = plan.Kind == BuildingKind.PublicPremises
+                    ? new Color32(116, 192, 237, 255) : new Color32(142, 214, 151, 255);
+                painter.Fill();
+            }
 
             var dot = Project(Selection);
             painter.BeginPath();

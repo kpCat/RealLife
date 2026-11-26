@@ -74,14 +74,14 @@ $UnityPath = (Get-Item -LiteralPath $UnityPath).FullName
 $installedVersion = (Get-Item -LiteralPath $UnityPath).VersionInfo.ProductVersion
 if (($installedVersion -split '_')[0] -ne $version) { throw "Expected Unity $version, found $installedVersion." }
 
-$scratchBase = 'D:\Temp\Codex\RealLife\REALLIFE-002'
+$scratchBase = 'D:\Temp\Codex\RealLife\REALLIFE-003'
 if (-not (Test-Path -LiteralPath 'D:\Temp' -PathType Container)) { throw 'D:\Temp is unavailable.' }
 $run = [Guid]::NewGuid().ToString('N').Substring(0, 12)
 $scratch = Join-Path $scratchBase $run
 if (Test-Path -LiteralPath $scratch) { throw "Scratch path already exists: $scratch" }
 New-Item -ItemType Directory -Path $scratch | Out-Null
 $markerPath = Join-Path $scratch '.codex-owned.json'
-@{ project = 'RealLife'; task = 'REALLIFE-002'; run = $run; created_at = [DateTime]::UtcNow.ToString('o'); absolute_root = $scratch } |
+@{ project = 'RealLife'; task = 'REALLIFE-003'; run = $run; created_at = [DateTime]::UtcNow.ToString('o'); absolute_root = $scratch } |
     ConvertTo-Json | Set-Content -LiteralPath $markerPath -Encoding utf8
 Write-Host "Scratch: $scratch"
 
@@ -133,22 +133,24 @@ try {
         Assert-SmokeLog $smokeLog 'RealLife Windows smoke passed.'
         Write-Host 'Windows Player smoke passed.'
 
-        $geoSmokeData = Join-Path $scratch 'geo-smoke'
         foreach ($route in @(
-            @{ flag = '-realLifeGeoSmoke'; log = 'region.log'; expected = 'RealLife region walking smoke passed.' },
-            @{ flag = '-realLifeGeoResume'; log = 'region-restart.log'; expected = 'RealLife region restart smoke passed.' }
+            @{ flag = '-realLifeGeoSmoke'; data = 'geo-smoke'; log = 'region.log'; expected = 'RealLife region walking smoke passed.' },
+            @{ flag = '-realLifeGeoResume'; data = 'geo-smoke'; log = 'region-restart.log'; expected = 'RealLife region restart smoke passed.' },
+            @{ flag = '-realLifeInteriorSmoke'; data = 'interior-smoke'; log = 'interior.log'; expected = 'RealLife interior walking smoke passed.' },
+            @{ flag = '-realLifeInteriorResume'; data = 'interior-smoke'; log = 'interior-restart.log'; expected = 'RealLife interior restart smoke passed.' }
         )) {
             $geoLog = Join-Path $scratch $route.log
-            $geoArgs = @($route.flag, "`"$geoSmokeData`"", '-logFile', "`"$geoLog`"",
+            $saveRoot = Join-Path $scratch $route.data
+            $geoArgs = @($route.flag, "`"$saveRoot`"", '-logFile', "`"$geoLog`"",
                 '-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '800')
             Invoke-CheckedProcess $candidatePlayer $geoArgs $geoLog 120
             Assert-SmokeLog $geoLog $route.expected
-            Select-String -LiteralPath $geoLog -Pattern '^Region route:' | ForEach-Object { Write-Host $_.Line }
+            Select-String -LiteralPath $geoLog -Pattern '^(Region|Interior) route:' | ForEach-Object { Write-Host $_.Line }
             Write-Host $route.expected
         }
 
         $buildMarker = '.reallife-build.json'
-        @{ project = 'RealLife'; directory = $release; editor = $version; release = '0.1.0' } |
+        @{ project = 'RealLife'; directory = $release; editor = $version; release = '0.2.0' } |
             ConvertTo-Json | Set-Content -LiteralPath (Join-Path $candidate $buildMarker) -Encoding utf8
         New-Item -ItemType Directory -Path (Split-Path -Parent $release) -Force | Out-Null
         Assert-NoLinks $candidate
@@ -175,7 +177,7 @@ finally {
         $marker = Get-Content -Raw -LiteralPath $markerPath | ConvertFrom-Json
         $resolved = (Resolve-Path -LiteralPath $scratch).Path
         if ($resolved -ne $scratch -or $marker.absolute_root -ne $resolved -or $marker.run -ne $run -or
-            $marker.project -ne 'RealLife' -or $marker.task -ne 'REALLIFE-002') {
+            $marker.project -ne 'RealLife' -or $marker.task -ne 'REALLIFE-003') {
             throw "Scratch ownership could not be verified: $scratch"
         }
         Assert-NoLinks $resolved

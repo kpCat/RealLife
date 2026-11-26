@@ -10,9 +10,9 @@ namespace RealLife.Runtime
 {
     internal static class RegionSmoke
     {
-        public static IEnumerator Run(WorldMenu menu, bool restart)
+        public static IEnumerator Run(WorldMenu menu, bool restart, bool interiors)
         {
-            using var scenario = Scenario(menu, restart).GetEnumerator();
+            using var scenario = Scenario(menu, restart, interiors).GetEnumerator();
             while (true)
             {
                 Exception failure = null;
@@ -28,19 +28,22 @@ namespace RealLife.Runtime
                 if (!next) break;
                 yield return scenario.Current;
             }
-            Debug.Log(restart ? "RealLife region restart smoke passed." : "RealLife region walking smoke passed.");
+            Debug.Log(interiors
+                ? restart ? "RealLife interior restart smoke passed." : "RealLife interior walking smoke passed."
+                : restart ? "RealLife region restart smoke passed." : "RealLife region walking smoke passed.");
             Application.Quit(0);
         }
 
-        private static IEnumerable<object> Scenario(WorldMenu menu, bool restart)
+        private static IEnumerable<object> Scenario(WorldMenu menu, bool restart, bool interiors)
         {
-            Require(Application.platform == RuntimePlatform.WindowsPlayer && Application.version == "0.1.0" &&
+            Require(Application.platform == RuntimePlatform.WindowsPlayer && Application.version == "0.2.0" &&
                 GraphicsSettings.currentRenderPipeline != null && SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null,
-                "Windows 0.1.0 with active URP and graphics");
+                "Windows 0.2.0 with active URP and graphics");
             var world = menu.Region;
             Require(world != null && menu.Globe != null && menu.Map == null, "offline data and globe loaded at startup");
             yield return null;
             yield return new WaitForEndOfFrame();
+
             menu.ChooseGlobe(-31, -160);
             Require(menu.Map == null && menu.Status.Contains("нет установленного пакета"), "uncovered globe location is labelled");
             var marker = menu.Globe.Marker();
@@ -49,6 +52,12 @@ namespace RealLife.Runtime
             Require(menu.Map != null, "globe marker opens the published map");
             yield return null;
             yield return new WaitForEndOfFrame();
+
+            if (interiors)
+            {
+                foreach (var frame in InteriorSmoke.Scenario(menu, restart)) yield return frame;
+                yield break;
+            }
 
             var route = world.Route;
             var firstIndex = 0;
@@ -148,7 +157,7 @@ namespace RealLife.Runtime
             }
         }
 
-        private static bool SamePose(RegionGame game, RegionSnapshot snapshot, Vector3 target) =>
+        internal static bool SamePose(RegionGame game, RegionSnapshot snapshot, Vector3 target) =>
             Vector3.Distance(game.Position, target) < .09f && Mathf.Abs(Mathf.DeltaAngle(game.Yaw, snapshot.Yaw)) < .02f &&
             Mathf.Abs(game.Pitch - snapshot.Pitch) < .02f && game.Tick == snapshot.Tick;
 
@@ -158,7 +167,7 @@ namespace RealLife.Runtime
                 throw new InvalidOperationException($"Player left the physical relief at {p}, expected ground {ground:F2}.");
         }
 
-        private static void Require(bool condition, string description)
+        internal static void Require(bool condition, string description)
         {
             if (!condition) throw new InvalidOperationException($"Region smoke failed: {description}.");
             Debug.Log($"Region smoke: {description}.");

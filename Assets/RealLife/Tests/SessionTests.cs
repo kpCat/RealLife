@@ -81,6 +81,35 @@ namespace RealLife.Tests
             Assert.That(target.PlayerLocal.X, Is.EqualTo(data.Route[0].X).Within(1e-8));
         }
 
+        [Test]
+        public void LegacyRegionSnapshotRestoresPoseAndUpgradesOnCapture()
+        {
+            var data = CreateRegion();
+            var world = new RegionWorld(data);
+            var origin = data.Route[0];
+            Assert.That(world.TryGround(origin, out var height), Is.True);
+            var legacy = new RegionSnapshot
+            {
+                Version = 2, WorldId = "earth:region.fixture", PackageId = "region.fixture", PackageFormat = 1,
+                PackageRevision = "r1", Player = world.Frame.ToGlobal(new LocalPoint(origin.X, height + .08, origin.Z)),
+                Yaw = 137, Pitch = 11, Tick = 260
+            };
+            var session = new RegionSession(world, data.Route[1], 0);
+
+            Assert.That(session.Restore(legacy), Is.True);
+            var upgraded = session.Capture();
+            Assert.That(upgraded.Version, Is.EqualTo(3));
+            Assert.That(upgraded.Player.X, Is.EqualTo(legacy.Player.X));
+            Assert.That(upgraded.Player.Y, Is.EqualTo(legacy.Player.Y));
+            Assert.That(upgraded.Player.Z, Is.EqualTo(legacy.Player.Z));
+            Assert.That(upgraded.Yaw, Is.EqualTo(137));
+            Assert.That(upgraded.Pitch, Is.EqualTo(11));
+            Assert.That(upgraded.Tick, Is.EqualTo(260));
+            upgraded.InventoryFingerprint = "different-catalog";
+            Assert.That(session.Restore(upgraded), Is.False);
+            Assert.That(session.Tick, Is.EqualTo(260));
+        }
+
         private static RegionDefinition CreateRegion()
         {
             const int level = 16, center = 32768;

@@ -9,25 +9,116 @@ namespace RealLife.Runtime
     {
         private const int PrefetchRadius = 2;
         private const int RetainRadius = 3;
+        private const double InteriorLoadDistance = 21;
+        private const double InteriorRetainDistance = 30;
         private readonly RegionWorld world;
         private readonly Material[] palette;
+        private readonly Buildings buildings;
+        private readonly Func<string, string> displayedItem;
         private readonly GameObject root = new GameObject("Regional cells");
         private readonly Dictionary<CellKey, CellView> loaded = new Dictionary<CellKey, CellView>();
+        private readonly Dictionary<string, BuildingView> interiors = new Dictionary<string, BuildingView>(StringComparer.Ordinal);
+        private readonly Dictionary<Collider, RegionChunk> shellCollision = new Dictionary<Collider, RegionChunk>();
         private readonly List<CellKey> discard = new List<CellKey>();
         private int preparedFrame = -1;
 
-        private enum Tone { Grass, Soil, Asphalt, Paving, Plaster, Brick, Trim, Glass, Metal, Stone, Leaves, Wood }
+        internal enum Tone { Grass, Soil, Asphalt, Paving, Plaster, Brick, Trim, Glass, Metal, Stone, Leaves, Wood }
 
-        public RegionView(RegionWorld world, Material[] palette)
+        public RegionView(RegionWorld world, Material[] palette, Buildings buildings, Func<string, string> displayedItem = null)
         {
             this.world = world;
             this.palette = palette;
+            this.buildings = buildings;
+            this.displayedItem = displayedItem;
         }
 
         public int Count => loaded.Count;
         public bool Contains(CellKey key) => loaded.ContainsKey(key);
         public bool HasBuilding(CellKey key, string id) =>
             loaded.TryGetValue(key, out var chunk) && chunk.BuildingIds.Contains(id);
+
+        public bool IsInteriorLoaded(string buildingId) => interiors.ContainsKey(buildingId);
+
+        public void Prepare(LocalPoint position)
+        {
+            var center = world.CellAt(new GeoPoint(position.X, position.Z));
+            Prime(center);
+            UpdateInteriors(position);
+            Trim(center);
+            Physics.SyncTransforms();
+        }
+
+        public void Step(CellKey center, LocalPoint position)
+        {
+            if (UpdateInteriors(position)) Physics.SyncTransforms();
+            Step(center);
+        }
+
+        public void RefreshInteractions()
+        {
+            foreach (var interior in interiors.Values) interior.Refresh(buildings, displayedItem);
+            Physics.SyncTransforms();
+        }
+
+        public bool TryFocus(Ray ray, float maxDistance, out BuildingFocus focus)
+        {
+            focus = default;
+            if (!Physics.Raycast(ray, out var hit, maxDistance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+                return false;
+            foreach (var interior in interiors.Values)
+                if (interior.TryFocus(hit.collider, out focus))
+                    return true;
+            if (!shellCollision.TryGetValue(hit.collider, out var chunk)) return false;
+            const float tolerance = .10f;
+            var nearest = tolerance * tolerance;
+            var point = Flat(hit.point);
+            BuildingFootprint match = null;
+            foreach (var footprint in chunk.Buildings)
+            {
+                if (buildings.TryGet(footprint.Id, out _)) continue;
+                var vertices = footprint.Footprint;
+                for (var i = 0; i < vertices.Length; i++)
+                {
+                    var a = Flat(vertices[i]);
+                    var edge = Flat(vertices[(i + 1) % vertices.Length]) - a;
+                    var along = edge.sqrMagnitude > 0 ? Mathf.Clamp01(Vector2.Dot(point - a, edge) / edge.sqrMagnitude) : 0;
+                    var squared = (point - a - edge * along).sqrMagnitude;
+                    if (squared >= nearest) continue;
+                    nearest = squared;
+                    match = footprint;
+                }
+            }
+            if (match == null) return false;
+            focus = new BuildingFocus(match.Id, BuildingFocusKind.Unsupported, FirstPersonMotor.ToLocal(hit.point));
+            return true;
+        }
+
+        private bool UpdateInteriors(LocalPoint position)
+        {
+            var changed = false;
+            foreach (var plan in buildings.Plans)
+            {
+                var distance = plan.DistanceToFootprint(position);
+                var nearby = interiors.TryGetValue(plan.Id, out var interior);
+                if (nearby && distance > InteriorRetainDistance)
+                {
+                    interior.Dispose();
+                    interiors.Remove(plan.Id);
+                    if (loaded.TryGetValue(plan.Owner, out var cell)) cell.SetProxy(plan.Id, true);
+                    changed = true;
+                }
+                else if (!nearby && distance <= InteriorLoadDistance)
+                {
+                    Add(plan.Owner);
+                    interior = new BuildingView(plan, palette, root.transform);
+                    interior.Refresh(buildings, displayedItem);
+                    interiors.Add(plan.Id, interior);
+                    loaded[plan.Owner].SetProxy(plan.Id, false);
+                    changed = true;
+                }
+            }
+            return changed;
+        }
 
         public void Prime(CellKey center)
         {
@@ -56,9 +147,19 @@ namespace RealLife.Runtime
             discard.Clear();
             foreach (var key in loaded.Keys)
                 if (Math.Max(Math.Abs(key.X - center.X), Math.Abs(key.Y - center.Y)) > RetainRadius)
-                    discard.Add(key);
+                {
+                    var pinned = false;
+                    foreach (var plan in buildings.Plans)
+                        if (plan.Owner.Equals(key) && interiors.ContainsKey(plan.Id))
+                        {
+                            pinned = true;
+                            break;
+                        }
+                    if (!pinned) discard.Add(key);
+                }
             foreach (var key in discard)
             {
+                if (loaded[key].ShellCollision != null) shellCollision.Remove(loaded[key].ShellCollision);
                 loaded[key].Dispose();
                 loaded.Remove(key);
             }
@@ -91,13 +192,26 @@ namespace RealLife.Runtime
             foreach (var road in data.Roads) AddRoad(detail, road);
             foreach (var building in data.Buildings)
             {
-                AddBuilding(detail, collision, building);
+                if (buildings.TryGet(building.Id, out _))
+                {
+                    var exterior = new MeshBuffer();
+                    var solid = new MeshBuffer();
+                    AddBuilding(exterior, solid, building);
+                    cell.AddProxy(building.Id, exterior, solid, palette);
+                    cell.SetProxy(building.Id, !interiors.ContainsKey(building.Id));
+                }
+                else AddBuilding(detail, collision, building);
                 cell.BuildingIds.Add(building.Id);
             }
             AddTrees(detail, key, data);
             cell.Add("Relief", ground, palette, true, true);
             cell.Add("Roads and shells", detail, palette, true, false);
-            cell.Add("Building collision", collision, palette, false, true);
+            var shell = cell.Add("Building collision", collision, palette, false, true);
+            if (shell != null)
+            {
+                cell.ShellCollision = shell.GetComponent<Collider>();
+                shellCollision.Add(cell.ShellCollision, data);
+            }
             loaded.Add(key, cell);
         }
 
@@ -300,6 +414,9 @@ namespace RealLife.Runtime
 
         public void Dispose()
         {
+            foreach (var interior in interiors.Values) interior.Dispose();
+            interiors.Clear();
+            shellCollision.Clear();
             foreach (var cell in loaded.Values) cell.Dispose();
             loaded.Clear();
             if (root != null) UnityEngine.Object.Destroy(root);
@@ -308,16 +425,30 @@ namespace RealLife.Runtime
         private sealed class CellView : IDisposable
         {
             private readonly List<Mesh> meshes = new List<Mesh>();
+            private readonly Dictionary<string, GameObject> proxies = new Dictionary<string, GameObject>(StringComparer.Ordinal);
             public GameObject Root { get; }
             public HashSet<string> BuildingIds { get; } = new HashSet<string>(StringComparer.Ordinal);
+            public Collider ShellCollision { get; set; }
 
             public CellView(CellKey key) => Root = new GameObject($"Cell {key}");
 
-            public void Add(string name, MeshBuffer buffer, Material[] materials, bool visible, bool collidable)
+            public void AddProxy(string id, MeshBuffer exterior, MeshBuffer solid, Material[] materials)
             {
-                if (buffer.Vertices.Count == 0) return;
+                var proxy = new GameObject(id + " shell");
+                proxy.transform.SetParent(Root.transform, false);
+                Add("Facade", exterior, materials, true, false, proxy.transform);
+                Add("Facade collision", solid, materials, false, true, proxy.transform);
+                proxies.Add(id, proxy);
+            }
+
+            public void SetProxy(string id, bool active) => proxies[id].SetActive(active);
+
+            public GameObject Add(string name, MeshBuffer buffer, Material[] materials, bool visible, bool collidable,
+                Transform parent = null)
+            {
+                if (buffer.Vertices.Count == 0) return null;
                 var entity = new GameObject(name);
-                entity.transform.SetParent(Root.transform, false);
+                entity.transform.SetParent(parent == null ? Root.transform : parent, false);
                 var mesh = new Mesh { name = name, indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
                 meshes.Add(mesh);
                 mesh.SetVertices(buffer.Vertices);
@@ -337,6 +468,7 @@ namespace RealLife.Runtime
                     entity.AddComponent<MeshRenderer>().sharedMaterials = used.ToArray();
                 }
                 if (collidable) entity.AddComponent<MeshCollider>().sharedMesh = mesh;
+                return entity;
             }
 
             public void Dispose()

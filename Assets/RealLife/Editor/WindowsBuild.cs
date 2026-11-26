@@ -31,7 +31,7 @@ namespace RealLife.Editor
             PlayerSettings.defaultScreenHeight = 800;
             PlayerSettings.resizableWindow = true;
             PlayerSettings.forceSingleInstance = true;
-            PlayerSettings.bundleVersion = "0.1.0";
+            PlayerSettings.bundleVersion = "0.2.0";
             AssetDatabase.SaveAssets();
 
             var result = BuildPipeline.BuildPlayer(new BuildPlayerOptions

@@ -1,0 +1,22 @@
+{
+  "Items": [
+    { "DefinitionId": "core:item.cup", "DisplayName": "Керамическая кружка", "Category": "Посуда", "Appearance": "cup", "UnitWeightGrams": 290, "MaxStack": 4 },
+    { "DefinitionId": "core:item.plate", "DisplayName": "Тарелка", "Category": "Посуда", "Appearance": "plate", "UnitWeightGrams": 340, "MaxStack": 6 },
+    { "DefinitionId": "core:item.book", "DisplayName": "Книга", "Category": "Книги", "Appearance": "book", "UnitWeightGrams": 360, "MaxStack": 5 },
+    { "DefinitionId": "core:item.notebook", "DisplayName": "Блокнот", "Category": "Канцелярия", "Appearance": "book", "UnitWeightGrams": 130, "MaxStack": 8 },
+    { "DefinitionId": "core:item.lantern", "DisplayName": "Ручной фонарь", "Category": "Инструменты", "Appearance": "hand-tool", "UnitWeightGrams": 410, "MaxStack": 1 },
+    { "DefinitionId": "core:item.tea", "DisplayName": "Пачка чая", "Category": "Продукты", "Appearance": "carton", "UnitWeightGrams": 100, "MaxStack": 12 },
+    { "DefinitionId": "core:item.tin", "DisplayName": "Банка фасоли", "Category": "Продукты", "Appearance": "tin", "UnitWeightGrams": 420, "MaxStack": 8 }
+  ],
+  "Furnishings": [
+    { "RoomRole": "Kitchen", "DefinitionId": "core:item.cup", "VariantId": "cream", "Quantity": 3 },
+    { "RoomRole": "Kitchen", "DefinitionId": "core:item.plate", "VariantId": "cream", "Quantity": 3 },
+    { "RoomRole": "Living", "DefinitionId": "core:item.book", "VariantId": "green", "Quantity": 3 },
+    { "RoomRole": "Living", "DefinitionId": "core:item.book", "VariantId": "blue", "Quantity": 3 },
+    { "RoomRole": "Bedroom", "DefinitionId": "core:item.notebook", "VariantId": "linen", "Quantity": 3 },
+    { "RoomRole": "Shop", "DefinitionId": "core:item.tea", "VariantId": "black", "Quantity": 4 },
+    { "RoomRole": "Shop", "DefinitionId": "core:item.tin", "VariantId": "plain", "Quantity": 4 },
+    { "RoomRole": "Storeroom", "DefinitionId": "core:item.lantern", "VariantId": "", "Quantity": 1 },
+    { "RoomRole": "Storeroom", "DefinitionId": "core:item.tin", "VariantId": "plain", "Quantity": 4 }
+  ]
+}

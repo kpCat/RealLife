@@ -9,15 +9,19 @@ namespace RealLife.Runtime
     internal sealed class SaveSlot
     {
         private readonly string directory;
+        private readonly string name;
         public string CurrentPath { get; }
         public string PreviousPath { get; }
 
-        public SaveSlot(string directory)
+        public SaveSlot(string directory, string name = "slot-01")
         {
             this.directory = directory;
-            CurrentPath = Path.Combine(directory, "slot-01.json");
-            PreviousPath = Path.Combine(directory, "slot-01.previous.json");
+            this.name = name;
+            CurrentPath = Path.Combine(directory, name + ".json");
+            PreviousPath = Path.Combine(directory, name + ".previous.json");
         }
+
+        public bool Exists => File.Exists(CurrentPath) || File.Exists(PreviousPath);
 
         public Task WriteAsync<T>(T snapshot, bool preservePrevious)
         {
@@ -32,7 +36,7 @@ namespace RealLife.Runtime
         private void Write(string json, bool preservePrevious)
         {
             Directory.CreateDirectory(directory);
-            var pending = Path.Combine(directory, $"slot-01.{Guid.NewGuid():N}.tmp");
+            var pending = Path.Combine(directory, $"{name}.{Guid.NewGuid():N}.tmp");
             try
             {
                 using (var file = new FileStream(pending, FileMode.CreateNew, FileAccess.Write, FileShare.None))

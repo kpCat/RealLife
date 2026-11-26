@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using RealLife.Simulation;
@@ -23,6 +24,8 @@ namespace RealLife.Runtime
         private GlobeView globe;
         private RegionMap map;
         private RegionWorld world;
+        private NeighborhoodCatalog catalog;
+        private IReadOnlyList<BuildingPlan> accessPlans;
         private RegionGame game;
         private VisualElement sidebar, viewport;
         private Label status;
@@ -32,6 +35,7 @@ namespace RealLife.Runtime
         private bool automation;
 
         internal RegionWorld Region => world;
+        internal IReadOnlyList<BuildingPlan> AccessPlans => accessPlans;
         internal GlobeView Globe => globe;
         internal RegionMap Map => map;
         internal RegionGame Game => game;
@@ -57,8 +61,11 @@ namespace RealLife.Runtime
 
             var smoke = Array.IndexOf(args, "-realLifeGeoSmoke");
             var restart = Array.IndexOf(args, "-realLifeGeoResume");
-            automation = smoke >= 0 || restart >= 0;
-            saveRoot = automation ? Path.GetFullPath(args[Math.Max(smoke, restart) + 1]) :
+            var interiors = Array.IndexOf(args, "-realLifeInteriorSmoke");
+            var interiorRestart = Array.IndexOf(args, "-realLifeInteriorResume");
+            var automatedRun = Math.Max(Math.Max(smoke, restart), Math.Max(interiors, interiorRestart));
+            automation = automatedRun >= 0;
+            saveRoot = automation ? Path.GetFullPath(args[automatedRun + 1]) :
                 Path.Combine(Application.persistentDataPath, "Saves", "Earth");
             ShowGlobe(loading: true);
 
@@ -79,10 +86,19 @@ namespace RealLife.Runtime
                 }
             }
             else Debug.LogWarning($"Globe data unavailable: {loadTexture.Exception?.GetBaseException().Message}");
-            if (loadPackage.Status == TaskStatus.RanToCompletion) world = loadPackage.Result;
+            if (loadPackage.Status == TaskStatus.RanToCompletion)
+            {
+                var itemData = Resources.Load<TextAsset>("NeighborhoodItems");
+                if (itemData == null) throw new InvalidOperationException("Neighborhood item catalog is missing.");
+                catalog = JsonUtility.FromJson<NeighborhoodCatalog>(itemData.text);
+                world = loadPackage.Result;
+                accessPlans = new Buildings(world).Plans;
+            }
             else Debug.LogWarning($"Region unavailable: {loadPackage.Exception?.GetBaseException().Message}");
             ShowGlobe();
-            if (automation) yield return RegionSmoke.Run(this, restart >= 0);
+            if (automation)
+                yield return RegionSmoke.Run(this, restart >= 0 || interiorRestart >= 0,
+                    interiors >= 0 || interiorRestart >= 0);
         }
 
         private void Update()
@@ -147,21 +163,20 @@ namespace RealLife.Runtime
             Layout();
             sidebar.Add(Text(world.Title, "world-title"));
             sidebar.Add(Text("Нажмите на карте, чтобы выбрать старт. Колёсико меняет масштаб, перетаскивание двигает карту.", "world-copy"));
-            sidebar.Add(Text("Светлые линии — дороги. Светлые контуры — здания. Золотая линия отмечает край покрытия.", "world-copy"));
+            sidebar.Add(Text("Светлые линии — дороги. Зелёные точки — доступные дома, синие — магазины. Золотая линия — край покрытия.", "world-copy"));
             sidebar.Add(start = Button("Начать прогулку", () => Launch(false), true));
             var resume = Button("Продолжить сохранение", () => Launch(true));
-            var files = new SaveSlot(PackageSaveDirectory);
-            resume.SetEnabled(File.Exists(files.CurrentPath) || File.Exists(files.PreviousPath));
+            resume.SetEnabled(RegionGame.HasSave(PackageSaveDirectory));
             sidebar.Add(resume);
             sidebar.Add(status = Text("", "world-status"));
             sidebar.Add(Block("world-spacer"));
-            sidebar.Add(Text("Фасады и растительность реконструированы. Здания закрыты.", "world-copy"));
+            sidebar.Add(Text("Планы помещений и назначение доступных зданий вымышлены.", "world-copy"));
             sidebar.Add(Button("К глобусу", () => ShowGlobe()));
             selected = world.Route[world.Route.Count / 2];
             if (!world.IsSafeStart(selected))
                 foreach (var point in world.Route)
                     if (world.IsSafeStart(point)) { selected = point; break; }
-            map = new RegionMap(world, selected, ChooseStart);
+            map = new RegionMap(world, accessPlans, selected, ChooseStart);
             viewport.Add(map);
             ChooseStart(selected);
         }
@@ -186,7 +201,7 @@ namespace RealLife.Runtime
         {
             if (map == null || game != null || !world.IsSafeStart(selected)) return false;
             var yaw = 165f;
-            game = new RegionGame(world, selected, yaw, document, hudStyle, regionPalette,
+            game = new RegionGame(world, selected, yaw, document, hudStyle, regionPalette, catalog,
                 PackageSaveDirectory, () => ShowGlobe(), automation);
             if (resume && !game.Load())
             {

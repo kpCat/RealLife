@@ -12,11 +12,14 @@ namespace RealLife.Runtime
         private readonly Label notice;
         private readonly VisualElement pause;
         private readonly VisualElement crosshair;
+        private readonly VisualElement context;
+        private bool paused;
+        private bool inventoryOpen;
         private string currentNotice;
         private float noticeUntil;
 
         public GameHud(UIDocument document, StyleSheet styles, string location, Action resume, Action save, Action load,
-            Action openWorlds = null, bool hasItems = true)
+            Action openWorlds = null, bool hasItems = true, bool regionalInventory = false)
         {
             var root = document.rootVisualElement;
             root.Clear();
@@ -32,7 +35,7 @@ namespace RealLife.Runtime
             crosshair.AddToClassList("crosshair");
             root.Add(crosshair);
 
-            var context = new VisualElement { pickingMode = PickingMode.Ignore };
+            context = new VisualElement { pickingMode = PickingMode.Ignore };
             context.AddToClassList("context");
             prompt = Label("", "prompt");
             notice = Label("", "notice");
@@ -43,7 +46,8 @@ namespace RealLife.Runtime
             inventory = Label("", "inventory");
             root.Add(inventory);
             if (!hasItems) inventory.style.display = DisplayStyle.None;
-            var controls = hasItems ? "WASD  Движение     E  Действие     F5 / F9  Сохранить / загрузить"
+            var controls = regionalInventory ? "WASD  Движение     E  Действие     I  Инвентарь     F5 / F9  Сохранить / загрузить"
+                : hasItems ? "WASD  Движение     E  Действие     F5 / F9  Сохранить / загрузить"
                 : "WASD  Движение     F5 / F9  Сохранить / загрузить     Esc  Меню";
             root.Add(Label(controls, "controls"));
 
@@ -65,9 +69,20 @@ namespace RealLife.Runtime
 
         public void SetPaused(bool paused)
         {
+            this.paused = paused;
             pause.style.display = paused ? DisplayStyle.Flex : DisplayStyle.None;
-            crosshair.style.display = paused ? DisplayStyle.None : DisplayStyle.Flex;
+            RefreshCrosshair();
         }
+
+        public void SetInventoryOpen(bool open)
+        {
+            inventoryOpen = open;
+            context.style.display = open ? DisplayStyle.None : DisplayStyle.Flex;
+            RefreshCrosshair();
+        }
+
+        private void RefreshCrosshair() => crosshair.style.display = paused || inventoryOpen
+            ? DisplayStyle.None : DisplayStyle.Flex;
 
         public void Announce(string message)
         {

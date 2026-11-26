@@ -17,6 +17,8 @@ namespace RealLife.Runtime
         private readonly RegionView view;
         private readonly GameHud hud;
         private readonly SaveSlot slot;
+        private readonly SaveSlot legacySlot;
+        private readonly RegionInteractions interactions;
         private readonly GameObject root = new GameObject("Regional first person");
         private readonly GameObject sunlight;
         private readonly bool automation;
@@ -25,12 +27,13 @@ namespace RealLife.Runtime
         private bool paused;
 
         public RegionGame(RegionWorld world, GeoPoint spawn, float yaw, UIDocument ui, StyleSheet styles, Material[] colors,
-            string saveDirectory, Action openWorlds, bool automation)
+            NeighborhoodCatalog catalog, string saveDirectory, Action openWorlds, bool automation)
         {
             this.world = world;
             this.automation = automation;
-            session = new RegionSession(world, spawn, yaw);
-            slot = new SaveSlot(saveDirectory);
+            session = new RegionSession(world, spawn, yaw, catalog);
+            slot = NewSaveSlot(saveDirectory);
+            legacySlot = new SaveSlot(saveDirectory);
             var controller = root.AddComponent<CharacterController>();
             controller.height = 1.82f;
             controller.radius = 0.27f;
@@ -62,10 +65,12 @@ namespace RealLife.Runtime
             RenderSettings.fogEndDistance = 330;
 
             motor = new FirstPersonMotor(controller, camera);
-            view = new RegionView(world, colors);
+            view = new RegionView(world, colors, session.Buildings, VisibleItem);
             hud = new GameHud(ui, styles, world.Title, () => SetPaused(false), Save, () => Load(),
-                openWorlds, hasItems: false);
-            RestorePresentation();
+                openWorlds, hasItems: false, regionalInventory: true);
+            interactions = new RegionInteractions(session, view, hud, ui.rootVisualElement, SetInventoryMode);
+            PreparePresentation(session.PlayerLocal);
+            RestoreMotor();
             SetPaused(false);
             RefreshHud();
         }
@@ -77,18 +82,37 @@ namespace RealLife.Runtime
         public bool IsSaving => write != null;
         public CellKey CurrentCell => world.CellAt(Flat(Position));
         public RegionView View => view;
+        public Buildings Buildings => session.Buildings;
+        public InventoryPanel InventoryPanel => interactions.Panel;
+        public string PlayerInventoryId => session.PlayerInventoryId;
         public string SavePath => slot.CurrentPath;
         public string PreviousSavePath => slot.PreviousPath;
+
+        public InventoryContainerView GetInventory(string id) => session.GetInventory(id);
+        public bool TryFocus(out BuildingFocus focus) => interactions.TryFocus(motor.Sight, out focus);
+        public bool Interact(InteractionControl control) => !paused && interactions.Activate(control, motor.Sight);
+
+        internal static bool HasSave(string directory) => NewSaveSlot(directory).Exists || new SaveSlot(directory).Exists;
+        private static SaveSlot NewSaveSlot(string directory) => new SaveSlot(directory, "slot-01-v3");
 
         public void ReadInput(float seconds)
         {
             var keyboard = Keyboard.current;
+            if (interactions.IsOpen)
+            {
+                if (Pressed(keyboard, Key.Escape) || Pressed(keyboard, Key.I)) interactions.Close();
+                PollSave();
+                return;
+            }
             if (Pressed(keyboard, Key.Escape)) SetPaused(!paused);
             if (!paused)
             {
                 var movement = new Vector2(Axis(keyboard, Key.D, Key.RightArrow, Key.A, Key.LeftArrow),
                     Axis(keyboard, Key.W, Key.UpArrow, Key.S, Key.DownArrow));
                 TickFrame(movement, Mouse.current?.delta.ReadValue() ?? Vector2.zero, seconds);
+                if (Pressed(keyboard, Key.E)) Interact(InteractionControl.Primary);
+                else if (Pressed(keyboard, Key.I)) Interact(InteractionControl.Details);
+                if (interactions.IsOpen) return;
             }
             else
             {
@@ -102,7 +126,8 @@ namespace RealLife.Runtime
         public void TickFrame(Vector2 movement, Vector2 look, float seconds)
         {
             PollSave();
-            view.Step(CurrentCell);
+            if (paused || interactions.IsOpen) return;
+            view.Step(CurrentCell, FirstPersonMotor.ToLocal(Position));
             var predicted = Flat(motor.PredictHorizontal(movement, look, seconds));
             var target = world.CellAt(predicted);
             if (!view.Contains(target) || world.DistanceToOutline(predicted) < 0.55) movement = Vector2.zero;
@@ -129,18 +154,32 @@ namespace RealLife.Runtime
                 hud.Announce("Слот относится к другой версии пакета. Сохранение осталось на диске.");
                 return;
             }
-            write = slot.WriteAsync(session.Capture(), !session.CanRestore(current) && session.CanRestore(previous));
+            var snapshot = session.Capture();
+            if (!session.CanRestore(snapshot))
+            {
+                hud.Announce("Для сохранения встаньте на свободный участок пола.");
+                return;
+            }
+            write = slot.WriteAsync(snapshot, !session.CanRestore(current) && session.CanRestore(previous));
             hud.Announce("Сохранение…");
         }
 
         public bool Load()
         {
             if (Busy()) return false;
-            var current = Read(slot.CurrentPath);
-            var previous = Read(slot.PreviousPath);
-            if (session.Restore(current) || session.Restore(previous))
+            var source = slot.Exists ? slot : legacySlot;
+            var current = Read(source.CurrentPath);
+            var previous = Read(source.PreviousPath);
+            var valid = session.TryGetRestorePosition(current, out var position) ? current :
+                session.TryGetRestorePosition(previous, out position) ? previous : null;
+            if (valid != null)
             {
-                RestorePresentation();
+                PreparePresentation(position);
+                if (!session.Restore(valid))
+                    throw new InvalidOperationException("Validated region snapshot could not be restored.");
+                view.RefreshInteractions();
+                RestoreMotor();
+                interactions.Close();
                 hud.Announce("Игра загружена.");
                 return true;
             }
@@ -184,25 +223,39 @@ namespace RealLife.Runtime
             write = null;
         }
 
-        private void RestorePresentation()
+        private void PreparePresentation(LocalPoint position) => view.Prepare(position);
+
+        private void RestoreMotor()
         {
-            var saved = session.PlayerLocal;
-            view.Prime(world.CellAt(new GeoPoint(saved.X, saved.Z)));
-            motor.Restore(saved, session.Yaw, session.Pitch);
+            motor.Restore(session.PlayerLocal, session.Yaw, session.Pitch);
             remainder = 0;
+        }
+
+        private string VisibleItem(string anchorId)
+        {
+            var container = session.GetInventory(anchorId);
+            return container == null || container.Stacks.Count == 0 ? null : container.Stacks[0].Appearance ?? "";
         }
 
         public void SetPaused(bool value)
         {
             paused = value;
+            if (value) interactions.Close();
             hud.SetPaused(value);
-            Cursor.lockState = value || automation ? CursorLockMode.None : CursorLockMode.Locked;
-            Cursor.visible = value || automation;
+            SetInventoryMode(interactions.IsOpen);
+        }
+
+        private void SetInventoryMode(bool open)
+        {
+            hud.SetInventoryOpen(open);
+            Cursor.lockState = paused || open || automation ? CursorLockMode.None : CursorLockMode.Locked;
+            Cursor.visible = paused || open || automation;
         }
 
         private void RefreshHud()
         {
-            var prompt = world.DistanceToOutline(Flat(Position)) < 13 ? "Граница установленного района" : null;
+            var prompt = paused ? null : interactions.Prompt(motor.Sight);
+            if (prompt == null && world.DistanceToOutline(Flat(Position)) < 13) prompt = "Граница установленного района";
             hud.Refresh(session.MinuteOfDay, null, prompt);
         }
 
